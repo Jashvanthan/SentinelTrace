@@ -1,0 +1,22 @@
+Return-Path: <admin@example.com>
+Delivered-To: user@sentineltrace.local
+Received: from mail.example.com (mail.example.com. [192.0.2.1])
+        by mx.sentineltrace.local with ESMTPS id abc123def456
+        for <user@sentineltrace.local>; Thu, 12 Oct 2023 10:20:30 -0700 (PDT)
+Authentication-Results: mx.sentineltrace.local;
+       spf=pass (google.com: domain of admin@example.com designates 192.0.2.1 as permitted sender) smtp.mailfrom=admin@example.com;
+       dkim=pass header.i=@example.com header.s=20231012 header.b=abcxyz;
+       dmarc=pass (p=REJECT sp=REJECT dis=NONE) header.from=example.com
+Message-ID: <1234567890.example.com@mail.example.com>
+Date: Thu, 12 Oct 2023 10:20:25 -0700
+From: Admin <admin@example.com>
+To: user@sentineltrace.local
+Subject: Weekly System Update
+Content-Type: text/plain; charset="utf-8"
+
+Hi User,
+
+This is a benign test email. Everything is operating normally.
+
+Best,
+Admin

@@ -1,0 +1,217 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    /* ── Color System (HSL) ────────────────────────────────────────────────── */
+    /* Background / Surface */
+    --background: 222 20% 8%;
+    --surface-1: 222 18% 11%;
+    --surface-2: 222 16% 14%;
+    --surface-3: 222 14% 17%;
+    --border: 222 14% 20%;
+    --border-subtle: 222 12% 16%;
+
+    /* Text */
+    --foreground: 210 20% 92%;
+    --foreground-muted: 215 15% 60%;
+    --foreground-subtle: 215 12% 40%;
+
+    /* Brand / Accent */
+    --accent: 192 90% 45%;           /* cyan-teal */
+    --accent-hover: 192 90% 52%;
+    --accent-subtle: 192 70% 20%;
+    --accent-foreground: 192 100% 10%;
+
+    /* Severity Colors */
+    --critical: 0 80% 55%;           /* red */
+    --high: 25 90% 52%;              /* orange */
+    --medium: 48 92% 52%;            /* amber */
+    --low: 142 60% 45%;              /* green */
+    --info: 210 80% 58%;             /* blue */
+
+    /* Severity subtle backgrounds */
+    --critical-subtle: 0 60% 15%;
+    --high-subtle: 25 70% 15%;
+    --medium-subtle: 48 60% 15%;
+    --low-subtle: 142 40% 12%;
+    --info-subtle: 210 50% 15%;
+
+    /* UI */
+    --radius: 0.5rem;
+    --radius-sm: 0.375rem;
+    --radius-lg: 0.75rem;
+
+    /* Scrollbar */
+    --scrollbar-track: hsl(var(--surface-1));
+    --scrollbar-thumb: hsl(var(--border));
+    --scrollbar-thumb-hover: hsl(var(--foreground-subtle));
+  }
+}
+
+@layer base {
+  * {
+    @apply box-border;
+    border-color: hsl(var(--border));
+  }
+
+  html {
+    @apply antialiased;
+    color-scheme: dark;
+    scroll-behavior: smooth;
+  }
+
+  body {
+    background-color: hsl(var(--background));
+    color: hsl(var(--foreground));
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    font-feature-settings: "cv11", "ss01";
+    line-height: 1.6;
+  }
+
+  /* Monospace for IOCs, hashes, code */
+  code, kbd, samp, pre, .font-mono {
+    font-family: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
+    font-variant-ligatures: none;
+  }
+
+  /* Custom Scrollbar */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    background: var(--scrollbar-track);
+  }
+  ::-webkit-scrollbar-thumb {
+    background: var(--scrollbar-thumb);
+    border-radius: 3px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--scrollbar-thumb-hover);
+  }
+
+  /* Focus ring */
+  :focus-visible {
+    outline: 2px solid hsl(var(--accent));
+    outline-offset: 2px;
+    border-radius: var(--radius-sm);
+  }
+
+  /* Selection */
+  ::selection {
+    background-color: hsl(var(--accent-subtle));
+    color: hsl(var(--foreground));
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    color: hsl(var(--foreground));
+    font-weight: 600;
+    letter-spacing: -0.02em;
+    line-height: 1.3;
+  }
+}
+
+@layer utilities {
+  /* Severity badge variants */
+  .severity-critical {
+    background-color: hsl(var(--critical-subtle));
+    color: hsl(var(--critical));
+    border: 1px solid hsl(var(--critical) / 0.3);
+  }
+  .severity-high {
+    background-color: hsl(var(--high-subtle));
+    color: hsl(var(--high));
+    border: 1px solid hsl(var(--high) / 0.3);
+  }
+  .severity-medium {
+    background-color: hsl(var(--medium-subtle));
+    color: hsl(var(--medium));
+    border: 1px solid hsl(var(--medium) / 0.3);
+  }
+  .severity-low {
+    background-color: hsl(var(--low-subtle));
+    color: hsl(var(--low));
+    border: 1px solid hsl(var(--low) / 0.3);
+  }
+  .severity-info {
+    background-color: hsl(var(--info-subtle));
+    color: hsl(var(--info));
+    border: 1px solid hsl(var(--info) / 0.3);
+  }
+
+  /* Glassmorphism surface */
+  .glass {
+    background-color: hsl(var(--surface-1) / 0.7);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid hsl(var(--border) / 0.5);
+  }
+
+  /* Accent glow — used sparingly for active states */
+  .glow-accent {
+    box-shadow: 0 0 0 1px hsl(var(--accent) / 0.3),
+                0 0 16px hsl(var(--accent) / 0.1);
+  }
+
+  /* Surface cards */
+  .card-surface {
+    background-color: hsl(var(--surface-1));
+    border: 1px solid hsl(var(--border));
+    border-radius: var(--radius);
+  }
+
+  /* Scrollable area */
+  .scrollable {
+    overflow-y: auto;
+    scrollbar-gutter: stable;
+  }
+
+  /* Truncate with ellipsis */
+  .truncate-2 {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  /* Live pulse dot */
+  .live-dot {
+    display: inline-block;
+    width: 0.5rem;
+    height: 0.5rem;
+    border-radius: 9999px;
+    animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+    background-color: hsl(var(--low));
+  }
+
+  /* Subtle grid pattern */
+  .grid-pattern {
+    background-image: linear-gradient(hsl(var(--border) / 0.15) 1px, transparent 1px),
+                      linear-gradient(90deg, hsl(var(--border) / 0.15) 1px, transparent 1px);
+    background-size: 32px 32px;
+  }
+
+  /* Status indicator colors */
+  .status-pending { color: hsl(var(--foreground-muted)); }
+  .status-processing { color: hsl(var(--info)); }
+  .status-complete { color: hsl(var(--low)); }
+  .status-failed { color: hsl(var(--critical)); }
+  .status-quarantined { color: hsl(var(--high)); }
+
+  /* Metric card */
+  .metric-card {
+    background-color: hsl(var(--surface-1));
+    border: 1px solid hsl(var(--border));
+    border-radius: var(--radius);
+    transition: all 200ms;
+    cursor: default;
+  }
+  .metric-card:hover {
+    border-color: hsl(var(--accent) / 0.3);
+    background-color: hsl(var(--surface-2));
+  }
+}
+
+/* ── Font imports ─────────────────────────────────────────────────────────── */
+

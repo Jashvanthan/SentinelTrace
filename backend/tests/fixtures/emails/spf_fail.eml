@@ -1,0 +1,23 @@
+Return-Path: <attacker@evil.com>
+Delivered-To: user@sentineltrace.local
+Received: from unknown-server.com (unknown-server.com. [198.51.100.2])
+        by mx.sentineltrace.local with ESMTPS id bad123def456
+        for <user@sentineltrace.local>; Thu, 12 Oct 2023 11:20:30 -0700 (PDT)
+Authentication-Results: mx.sentineltrace.local;
+       spf=fail (google.com: domain of attacker@evil.com does not designate 198.51.100.2 as permitted sender) smtp.mailfrom=attacker@evil.com;
+       dkim=neutral (no signatures found);
+       dmarc=fail (p=NONE sp=NONE dis=NONE) header.from=evil.com
+Message-ID: <9999999999.evil.com@unknown-server.com>
+Date: Thu, 12 Oct 2023 11:20:25 -0700
+From: Security Alert <attacker@evil.com>
+Reply-To: support-fake@evil.com
+To: user@sentineltrace.local
+Subject: URGENT: Your account has been compromised!
+Content-Type: text/html; charset="utf-8"
+
+<html>
+<body>
+<p>Dear user,</p>
+<p>Your account will be suspended in 24 hours. Click here to verify: <a href="http://malicious-phishing.com/login">Verify Account</a></p>
+</body>
+</html>

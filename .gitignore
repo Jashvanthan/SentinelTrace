@@ -1,0 +1,166 @@
+# =====================
+# Python
+# =====================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+eggs/
+parts/
+var/
+sdist/
+wheels/
+*.egg-link
+.eggs/
+.installed.cfg
+lib/
+lib64/
+MANIFEST
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+env/
+.env.local
+.env.*.local
+
+# pytest
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+*.log
+*.pot
+
+# mypy
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# ruff
+.ruff_cache/
+
+# =====================
+# Node / Frontend
+# =====================
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+.pnpm-store/
+.npm
+.yarn/cache
+.yarn/unplugged
+.yarn/build-state.yml
+.yarn/install-state.gz
+
+# Build outputs
+dist/
+dist-ssr/
+*.local
+.cache/
+
+# Vite
+.vite/
+
+# TypeScript
+*.tsbuildinfo
+
+# =====================
+# Environment / Secrets
+# =====================
+.env
+.env.*
+!.env.example
+!.env.*.example
+*.pem
+*.key
+*.cert
+*.p12
+secrets.json
+credentials.json
+service-account.json
+
+# =====================
+# IDE & Editor
+# =====================
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.project
+.classpath
+.settings/
+*.sublime-project
+*.sublime-workspace
+
+# =====================
+# OS
+# =====================
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+desktop.ini
+
+# =====================
+# Docker
+# =====================
+docker/volumes/
+docker/data/
+
+# =====================
+# Database
+# =====================
+*.sqlite
+*.db
+*.sqlite3
+
+# =====================
+# Alembic
+# =====================
+# Keep migrations tracked, exclude pycache
+backend/app/db/migrations/__pycache__/
+
+# =====================
+# Logs & Reports
+# =====================
+logs/
+*.log
+reports/
+
+# =====================
+# GCS / Cloud
+# =====================
+*.json
+!package.json
+!package-lock.json
+!tsconfig*.json
+!components.json
+!**/fixtures/*.json
+!**/mocks/*.json
+
+# =====================
+# Test artifacts
+# =====================
+coverage/
+.nyc_output/
+junit.xml
+test-results/
+
+# =====================
+# Misc
+# =====================
+.sentineltrace/
+tmp/
+temp/
