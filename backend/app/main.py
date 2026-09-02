@@ -11,6 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 
 from app.api.v1.auth import router as auth_router
+from app.api.v1.campaigns import router as campaigns_router
 from app.api.v1.emails import router as emails_router
 from app.api.v1.workspaces import router as workspaces_router
 from app.api.v1.integrations import router as integrations_router
@@ -120,6 +121,7 @@ def create_app() -> FastAPI:
     app.include_router(auth_router, prefix=API_PREFIX)
     app.include_router(workspaces_router, prefix=API_PREFIX)
     app.include_router(emails_router, prefix=API_PREFIX)
+    app.include_router(campaigns_router, prefix=API_PREFIX)
     app.include_router(integrations_router, prefix=API_PREFIX, tags=["integrations"])
     app.include_router(intel_router, prefix=API_PREFIX)
     app.include_router(geo_router, prefix=API_PREFIX)

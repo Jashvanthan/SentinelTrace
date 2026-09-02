@@ -32,6 +32,7 @@ from app.core.security import (
 )
 from app.models.audit_log import AuditLog
 from app.models.refresh_session import RefreshSession
+from app.services.audit_service import write_audit_log
 from app.models.user import AuthProvider, User, UserRole
 from app.models.oauth import ExternalIdentity, OAuthState
 from app.schemas.auth import LoginRequest, TokenResponse, UserRegisterRequest, UserResponse
@@ -53,7 +54,7 @@ async def register_user(
         # Prevent account enumeration by returning a generic 201 with the submitted info
         # The attacker thinks registration succeeded, but the real account is untouched.
         # When they try to login with this password, it will fail.
-        await _write_audit(db, None, "REGISTER_FAILED_DUPLICATE", request=request, metadata={"email": payload.email})
+        await write_audit_log(db, action="REGISTER_FAILED_DUPLICATE", user_id=None, request=request, details={"email": payload.email})
         return User(
             id=uuid.uuid4(),
             email=payload.email.lower(),
@@ -76,7 +77,7 @@ async def register_user(
     db.add(user)
     await db.flush()
 
-    await _write_audit(db, user.id, "USER_REGISTERED", request=request)
+    await write_audit_log(db, action="USER_REGISTERED", user_id=user.id, request=request)
     logger.info("user_registered", user_id=str(user.id), email=user.email)
     return user
 
@@ -100,10 +101,10 @@ async def authenticate_user(
     # Constant-time comparison to prevent timing attacks
     dummy_hash = "$argon2id$v=19$m=65536,t=3,p=1$dummydummydummy$dummydummydummydummydummy"
     if user is None or not verify_password(payload.password, user.password_hash or dummy_hash):
-        await _write_audit(
-            db, None, "LOGIN_FAILED",
+        await write_audit_log(
+            db, action="LOGIN_FAILED", user_id=None,
             request=request,
-            metadata={"email": payload.email},
+            details={"email": payload.email},
             outcome="FAILURE",
         )
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid credentials")
@@ -124,7 +125,7 @@ async def authenticate_user(
     set_refresh_token_cookie(response, raw_refresh)
 
     user.last_login_at = datetime.now(UTC)
-    await _write_audit(db, user.id, "LOGIN_SUCCESS", request=request)
+    await write_audit_log(db, action="LOGIN_SUCCESS", user_id=user.id, request=request)
     logger.info("user_login", user_id=str(user.id))
 
     return TokenResponse(
@@ -293,7 +294,7 @@ async def upsert_google_user(
             raise HTTPException(status.HTTP_401_UNAUTHORIZED, "User account is disabled")
         
         user.avatar_url = id_info.get("picture", user.avatar_url)
-        await _write_audit(db, user.id, "GOOGLE_LOGIN", request=request)
+        await write_audit_log(db, action="GOOGLE_LOGIN", user_id=user.id, request=request)
     else:
         # New Google Identity. Check for email collision.
         existing_user = await db.scalar(select(User).where(User.email == email))
@@ -301,7 +302,7 @@ async def upsert_google_user(
         if existing_user:
             if existing_user.auth_provider == AuthProvider.LOCAL:
                 # MANDATORY CORRECTION: DO NOT automatically merge accounts.
-                await _write_audit(db, existing_user.id, "GOOGLE_ACCOUNT_COLLISION", request=request)
+                await write_audit_log(db, action="GOOGLE_ACCOUNT_COLLISION", user_id=existing_user.id, request=request)
                 raise HTTPException(
                     status.HTTP_409_CONFLICT, 
                     "Email already registered using password login. Please login with password."
@@ -320,7 +321,7 @@ async def upsert_google_user(
             )
             db.add(user)
             await db.flush()
-            await _write_audit(db, user.id, "GOOGLE_USER_CREATED", request=request)
+            await write_audit_log(db, action="GOOGLE_USER_CREATED", user_id=user.id, request=request)
 
         # Create External Identity link
         new_ext_id = ExternalIdentity(
@@ -331,7 +332,7 @@ async def upsert_google_user(
         )
         db.add(new_ext_id)
         await db.flush()
-        await _write_audit(db, user.id, "GOOGLE_ACCOUNT_LINKED", request=request)
+        await write_audit_log(db, action="GOOGLE_ACCOUNT_LINKED", user_id=user.id, request=request)
 
     # Issue tokens
     access_token = create_access_token(str(user.id), user.email, user.role.value)
@@ -384,20 +385,3 @@ def _hash_token(raw: str) -> str:
     return hashlib.sha256(raw.encode()).hexdigest()
 
 
-async def _write_audit(
-    db: AsyncSession,
-    user_id: uuid.UUID | None,
-    action: str,
-    request: Request | None = None,
-    metadata: dict | None = None,
-    outcome: str = "SUCCESS",
-) -> None:
-    log = AuditLog(
-        user_id=user_id,
-        action=action,
-        ip_address=request.client.host if request and request.client else None,
-        user_agent=request.headers.get("User-Agent") if request else None,
-        metadata=metadata,
-        outcome=outcome,
-    )
-    db.add(log)
