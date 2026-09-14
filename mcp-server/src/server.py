@@ -25,6 +25,15 @@ from tools.geo_tools import geolocate_ip
 from tools.ai_tools import classify_threat_context
 from tools.evidence_tools import verify_file_integrity, generate_evidence_manifest
 from tools.gmail_tools import gmail_list_messages, gmail_get_message, gmail_get_raw_message
+from tools.investigation_tools import (
+    search_threats,
+    get_email_analysis,
+    search_iocs,
+    get_campaign,
+    search_campaigns,
+    get_campaign_graph,
+    get_threat_summary,
+)
 
 app = Server("sentineltrace-mcp")
 
@@ -239,6 +248,97 @@ TOOLS: list[Tool] = [
             "required": ["workspace_id", "gmail_connection_id", "message_id"],
         },
     ),
+    Tool(
+        name="search_threats",
+        description="Search threat detections within an authorized SentinelTrace workspace. Results are limited and workspace-scoped.",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "workspace_id": {"type": "string", "description": "The target workspace ID"},
+                "threat_category": {"type": "string", "description": "Filter by threat category (e.g. PHISHING, MALWARE)"},
+                "is_malicious": {"type": "boolean", "description": "Filter by malicious status"},
+                "limit": {"type": "integer", "description": "Pagination limit (max 100)"}
+            },
+            "required": ["workspace_id"]
+        }
+    ),
+    Tool(
+        name="get_email_analysis",
+        description="Get secure email analysis details within a workspace. Returns analysis metadata, threat scores, and verdicts without exposing raw unredacted emails or credentials.",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "workspace_id": {"type": "string"},
+                "email_id": {"type": "string"}
+            },
+            "required": ["workspace_id", "email_id"]
+        }
+    ),
+    Tool(
+        name="search_iocs",
+        description="Search Indicators of Compromise (IOCs) within an authorized SentinelTrace workspace.",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "workspace_id": {"type": "string"},
+                "search": {"type": "string", "description": "Search text for IOC value"},
+                "ioc_type": {"type": "string", "description": "Filter by IOC type (ip, domain, url, hash)"},
+                "is_malicious": {"type": "boolean", "description": "Filter by malicious status"},
+                "limit": {"type": "integer", "description": "Pagination limit (max 100)"}
+            },
+            "required": ["workspace_id"]
+        }
+    ),
+    Tool(
+        name="search_campaigns",
+        description="Search active threat campaigns within a workspace.",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "workspace_id": {"type": "string"},
+                "status": {"type": "string", "description": "Filter by campaign status (e.g., ACTIVE, CONTAINED)"},
+                "limit": {"type": "integer", "description": "Pagination limit (max 100)"}
+            },
+            "required": ["workspace_id"]
+        }
+    ),
+    Tool(
+        name="get_campaign",
+        description="Get detailed metadata for a specific threat campaign within a workspace.",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "workspace_id": {"type": "string"},
+                "campaign_id": {"type": "string"}
+            },
+            "required": ["workspace_id", "campaign_id"]
+        }
+    ),
+    Tool(
+        name="get_campaign_graph",
+        description="Retrieve a bounded campaign correlation graph showing relationships between emails, senders, and IOCs.",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "workspace_id": {"type": "string"},
+                "campaign_id": {"type": "string", "description": "Target campaign ID"},
+                "analysis_id": {"type": "string", "description": "Target analysis ID (provide either campaign_id or analysis_id)"},
+                "depth": {"type": "integer", "description": "Traversal depth (max 4)"}
+            },
+            "required": ["workspace_id"]
+        }
+    ),
+    Tool(
+        name="get_threat_summary",
+        description="Get a high-level summary of workspace threat statistics and risk metrics.",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "workspace_id": {"type": "string"}
+            },
+            "required": ["workspace_id"]
+        }
+    ),
 ]
 
 
@@ -299,6 +399,48 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
                 arguments["workspace_id"],
                 arguments["gmail_connection_id"],
                 arguments["message_id"]
+            )
+        elif name == "search_threats":
+            result = await search_threats(
+                arguments["workspace_id"],
+                arguments.get("threat_category"),
+                arguments.get("is_malicious"),
+                arguments.get("limit", 20)
+            )
+        elif name == "get_email_analysis":
+            result = await get_email_analysis(
+                arguments["workspace_id"],
+                arguments["email_id"]
+            )
+        elif name == "search_iocs":
+            result = await search_iocs(
+                arguments["workspace_id"],
+                arguments.get("search"),
+                arguments.get("ioc_type"),
+                arguments.get("is_malicious"),
+                arguments.get("limit", 20)
+            )
+        elif name == "search_campaigns":
+            result = await search_campaigns(
+                arguments["workspace_id"],
+                arguments.get("status"),
+                arguments.get("limit", 20)
+            )
+        elif name == "get_campaign":
+            result = await get_campaign(
+                arguments["workspace_id"],
+                arguments["campaign_id"]
+            )
+        elif name == "get_campaign_graph":
+            result = await get_campaign_graph(
+                arguments["workspace_id"],
+                arguments.get("campaign_id"),
+                arguments.get("analysis_id"),
+                arguments.get("depth", 2)
+            )
+        elif name == "get_threat_summary":
+            result = await get_threat_summary(
+                arguments["workspace_id"]
             )
         elif name == "system_health":
             result = {

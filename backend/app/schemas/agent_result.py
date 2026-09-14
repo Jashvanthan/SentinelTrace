@@ -12,9 +12,6 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.models.email_analysis import SeverityLevel, ThreatCategory
-
-
 class AgentStatus(str, enum.Enum):
     PENDING = "PENDING"
     RUNNING = "RUNNING"
@@ -38,6 +35,9 @@ class FindingSeverity(str, enum.Enum):
     MEDIUM = "MEDIUM"
     LOW = "LOW"
     INFO = "INFO"
+
+
+from app.models.email_analysis import SeverityLevel, ThreatCategory
 
 
 class AgentFinding(BaseModel):

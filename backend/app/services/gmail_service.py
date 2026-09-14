@@ -1,10 +1,11 @@
-"""
-SentinelTrace Backend — Secure Gmail API Service
-"""
+import os
 import asyncio
 import logging
 from datetime import datetime, timezone
 from typing import Any
+
+os.environ["OAUTHLIB_RELAX_TOKEN_SCOPE"] = "1"
+os.environ["OAUTHLIB_INSECURE_TRANSPORT"] = "1"
 
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import Flow
@@ -41,20 +42,22 @@ class GmailService:
         flow.redirect_uri = self.settings.GMAIL_REDIRECT_URI
         return flow
 
-    def get_authorization_url(self, state: str) -> str:
-        """Generate the authorization URL for Gmail."""
+    def get_authorization_url(self, state: str) -> tuple[str, str | None]:
+        """Generate the authorization URL and PKCE code_verifier for Gmail."""
         flow = self._get_flow(state=state)
         auth_url, _ = flow.authorization_url(
             access_type="offline",
             include_granted_scopes="true",
             prompt="consent",
         )
-        return auth_url
+        return auth_url, flow.code_verifier
 
-    async def exchange_code(self, code: str) -> dict:
+    async def exchange_code(self, code: str, code_verifier: str | None = None) -> dict:
         """Exchange the OAuth authorization code for credentials."""
         def _exchange():
             flow = self._get_flow()
+            if code_verifier:
+                flow.code_verifier = code_verifier
             flow.fetch_token(code=code)
             return flow.credentials
 

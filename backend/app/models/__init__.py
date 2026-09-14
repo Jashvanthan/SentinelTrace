@@ -12,9 +12,22 @@ from app.models.user import User
 from app.models.workspace import Workspace, WorkspaceMember
 from app.models.integrations import GmailConnection
 from app.models.oauth import ExternalIdentity, OAuthState
+from app.models.google_pending import GooglePendingNonce
 from app.models.jobs import GmailSyncJob
 from app.models.ai_analysis import AIAnalysis, AgentResult
 from app.models.campaign import Campaign, CampaignMember
+from app.models.investigation import (
+    Investigation,
+    InvestigationEntity,
+    AnalystNote,
+    AnalystFinding,
+    EvidenceVerification,
+    InvestigationStatus,
+    FindingSeverity,
+    FindingConfidence,
+    VerificationStatus,
+)
+from app.models.report import ForensicReport, ReportStatus
 
 __all__ = [
     "User",

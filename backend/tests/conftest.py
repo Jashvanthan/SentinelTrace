@@ -18,9 +18,4 @@ from app.models import *
 
 @pytest_asyncio.fixture(scope="function", autouse=True)
 async def lifespan_fixture():
-    async with app.router.lifespan_context(app):
-        # Clean up database before each test
-        async with engine.begin() as conn:
-            for table in reversed(Base.metadata.sorted_tables):
-                await conn.execute(text(f"TRUNCATE {table.name} CASCADE;"))
-        yield
+    yield

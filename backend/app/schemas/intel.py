@@ -18,72 +18,127 @@ class EnrichmentRequest(BaseModel):
 
 
 class VirusTotalResult(BaseModel):
-    malicious_count: int
-    suspicious_count: int
-    harmless_count: int
-    total_engines: int
-    threat_names: list[str]
-    last_analysis_date: str | None
-    reputation: int | None
+    malicious_count: int = 0
+    suspicious_count: int = 0
+    harmless_count: int = 0
+    total_engines: int = 0
+    threat_names: list[str] = []
+    last_analysis_date: int | str | None = None
+    reputation: int | None = None
 
 
 class AbuseIPDBResult(BaseModel):
-    ip_address: str
-    abuse_confidence_score: int
-    total_reports: int
-    country_code: str | None
-    isp: str | None
-    domain: str | None
-    is_whitelisted: bool
+    ip_address: str = ""
+    abuse_confidence_score: int = 0
+    total_reports: int = 0
+    country_code: str | None = None
+    isp: str | None = None
+    domain: str | None = None
+    is_whitelisted: bool = False
 
 
 class ShodanResult(BaseModel):
-    ip_str: str
-    ports: list[int]
-    hostnames: list[str]
-    country_name: str | None
-    city: str | None
-    org: str | None
-    isp: str | None
-    os: str | None
-    vulns: list[str]
-    last_update: str | None
+    ip_str: str = ""
+    ports: list[int] = []
+    hostnames: list[str] = []
+    country_name: str | None = None
+    city: str | None = None
+    org: str | None = None
+    isp: str | None = None
+    os: str | None = None
+    vulns: list[str] = []
+    last_update: str | None = None
 
 
 class EnrichmentResponse(BaseModel):
     indicator: str
     indicator_type: str
-    virustotal: VirusTotalResult | None = None
-    abuseipdb: AbuseIPDBResult | None = None
-    shodan: ShodanResult | None = None
-    aggregate_threat_score: int
-    is_malicious: bool
+    virustotal: VirusTotalResult | dict | None = None
+    abuseipdb: AbuseIPDBResult | dict | None = None
+    shodan: ShodanResult | dict | None = None
+    aggregate_threat_score: int = 0
+    is_malicious: bool = False
     errors: dict[str, str] = {}
+
+
+class IOCResponse(BaseModel):
+    id: str
+    analysis_id: str | None = None
+    email_subject: str | None = None
+    sender_email: str | None = None
+    ioc_type: str
+    value: str
+    is_malicious: bool | None = None
+    confidence_score: float | None = None
+    threat_score: int | None = None
+    tags: list[str] | None = None
+    enrichment_data: dict | None = None
+    first_seen_at: str | None = None
+    last_seen_at: str | None = None
+    source: str | None = None
+    created_at: str | None = None
+
+
+class IOCListResponse(BaseModel):
+    items: list[IOCResponse]
+    total: int
+    page: int
+    page_size: int
+
+
+import ipaddress
+from pydantic import BaseModel, Field, field_validator
 
 
 # ── Geolocation ───────────────────────────────────────────────────────────────
 
 class GeoLocationRequest(BaseModel):
-    ip_address: str
+    ip_address: str = Field(..., min_length=1, max_length=64, description="IPv4 or IPv6 address to geolocate")
+
+    @field_validator("ip_address")
+    @classmethod
+    def validate_ip(cls, v: str) -> str:
+        clean = v.strip()
+        parts = clean.split(".")
+        if len(parts) == 4 and all(p.isdigit() for p in parts):
+            try:
+                clean = ".".join(str(int(p)) for p in parts)
+            except ValueError:
+                pass
+        try:
+            ip_obj = ipaddress.ip_address(clean)
+            return str(ip_obj)
+        except ValueError:
+            raise ValueError(f"Invalid IP address format: '{v.strip()}'. Must be a valid IPv4 or IPv6 address.")
 
 
 class GeoLocationResponse(BaseModel):
     ip_address: str
-    country: str | None
-    country_code: str | None
-    region: str | None
-    city: str | None
-    postal: str | None
-    latitude: float | None
-    longitude: float | None
-    timezone: str | None
-    isp: str | None
-    org: str | None
-    asn: str | None
-    is_proxy: bool | None
-    is_vpn: bool | None
-    is_tor: bool | None
+    country: str | None = None
+    country_code: str | None = None
+    region: str | None = None
+    city: str | None = None
+    postal: str | None = None
+    latitude: float | None = None
+    longitude: float | None = None
+    accuracy_radius: int | float | None = None
+    timezone: str | None = None
+    continent: str | None = None
+    network: str | None = None
+    isp: str | None = None
+    org: str | None = None
+    asn: str | None = None
+    is_proxy: bool | None = None
+    is_vpn: bool | None = None
+    is_tor: bool | None = None
+    is_hosting: bool | None = None
+    routing_type: str | None = None
+    routing_label: str | None = None
     provider: str
+    location_status: str | None = "RESOLVED"
+    location_confidence: str | None = "HIGH_CONFIDENCE"
+    provider_comparison: list[dict] | None = None
+
 
 
 # ── Campaign Graph ────────────────────────────────────────────────────────────
@@ -103,10 +158,10 @@ class CampaignEdgeSchema(BaseModel):
 
 
 class CampaignGraphResponse(BaseModel):
-    campaign_id: str | None
-    nodes: list[CampaignNodeSchema]
-    edges: list[CampaignEdgeSchema]
-    analysis_count: int
+    campaign_id: str | None = None
+    nodes: list[CampaignNodeSchema] = []
+    edges: list[CampaignEdgeSchema] = []
+    analysis_count: int = 0
 
 
 # ── Evidence / Reports ────────────────────────────────────────────────────────

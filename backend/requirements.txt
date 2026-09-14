@@ -15,9 +15,10 @@ alembic>=1.14.0
 # Neo4j
 neo4j>=5.26.0
 
-# Redis / Rate Limiting
+# Redis & Background Jobs
 redis>=5.2.0
-fastapi-limiter==0.1.6>=0.1.6
+fastapi-limiter==0.1.6
+celery>=5.4.0
 
 # Auth & Security
 passlib[argon2]>=1.7.4
@@ -31,6 +32,7 @@ pydantic-settings>=2.6.0
 email-validator>=2.2.0
 
 # Email Parsing
+mail-parser>=3.15.0
 chardet>=5.2.0
 
 # AI / LLM
@@ -51,3 +53,5 @@ Pillow>=11.0.0
 
 # Utilities
 python-dateutil>=2.9.0
+geoip2>=5.0.0
+

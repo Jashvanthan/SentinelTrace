@@ -12,7 +12,7 @@ from __future__ import annotations
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import Cookie, Depends, HTTPException, Request, Security, status
+from fastapi import Cookie, Depends, HTTPException, Query, Request, Security, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -122,21 +122,39 @@ def require_workspace_role(*allowed_roles: str):
     Returns 403 if the user lacks the required role.
     """
     async def role_guard(
-        workspace_id: UUID,
+        request: Request,
         user: CurrentUser,
         db: DbSession,
     ):
         from sqlalchemy import select
         from app.models.workspace import WorkspaceMember
 
-        member = await db.scalar(
-            select(WorkspaceMember).where(
-                WorkspaceMember.workspace_id == workspace_id,
-                WorkspaceMember.user_id == user.id,
+        raw_ws_id = request.path_params.get("workspace_id") or request.query_params.get("workspace_id")
+        target_ws_id: UUID | None = None
+        if raw_ws_id:
+            try:
+                target_ws_id = UUID(str(raw_ws_id))
+            except (ValueError, TypeError):
+                target_ws_id = None
+
+        if not target_ws_id:
+            target_ws_id = getattr(user, "active_workspace_id", None)
+
+        if not target_ws_id:
+            member = await db.scalar(
+                select(WorkspaceMember).where(WorkspaceMember.user_id == user.id)
             )
-        )
-        if not member:
-            raise HTTPException(status.HTTP_404_NOT_FOUND, "Workspace not found")
+            if not member:
+                raise HTTPException(status.HTTP_404_NOT_FOUND, "No workspace found for user")
+        else:
+            member = await db.scalar(
+                select(WorkspaceMember).where(
+                    WorkspaceMember.workspace_id == target_ws_id,
+                    WorkspaceMember.user_id == user.id,
+                )
+            )
+            if not member:
+                raise HTTPException(status.HTTP_404_NOT_FOUND, "Workspace not found")
         
         if allowed_roles and member.role not in allowed_roles:
             raise HTTPException(

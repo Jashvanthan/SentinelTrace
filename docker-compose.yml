@@ -6,15 +6,15 @@ services:
     container_name: sentineltrace-postgres
     restart: unless-stopped
     environment:
-      POSTGRES_DB: ${POSTGRES_DB:-sentineltrace}
-      POSTGRES_USER: ${POSTGRES_USER:-sentineltrace}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-sentineltrace_pass}
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     ports:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-sentineltrace} -d ${POSTGRES_DB:-sentineltrace}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -24,7 +24,7 @@ services:
     container_name: sentineltrace-neo4j
     restart: unless-stopped
     environment:
-      NEO4J_AUTH: ${NEO4J_USERNAME:-neo4j}/${NEO4J_PASSWORD:-neo4j_password}
+      NEO4J_AUTH: ${NEO4J_USERNAME}/${NEO4J_PASSWORD}
       NEO4J_PLUGINS: '["apoc"]'
       NEO4J_dbms_security_procedures_unrestricted: apoc.*
     ports:
@@ -43,16 +43,42 @@ services:
     image: redis:7-alpine
     container_name: sentineltrace-redis
     restart: unless-stopped
-    command: redis-server --requirepass ${REDIS_PASSWORD:-redis_password}
+    command: redis-server --requirepass ${REDIS_PASSWORD}
     ports:
       - "6379:6379"
     volumes:
       - redis_data:/data
     healthcheck:
-      test: ["CMD-SHELL", "redis-cli -a ${REDIS_PASSWORD:-redis_password} ping | grep PONG"]
+      test: ["CMD-SHELL", "redis-cli -a ${REDIS_PASSWORD} ping | grep PONG"]
       interval: 10s
       timeout: 5s
       retries: 5
+  api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: sentineltrace-api
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend:/app
+    env_file:
+      - .env
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      - REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379/0
+      - NEO4J_URI=bolt://neo4j:7687
+      - NEO4J_USERNAME=${NEO4J_USERNAME}
+      - NEO4J_PASSWORD=${NEO4J_PASSWORD}
+      - APP_ENV=${APP_ENV}
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      neo4j:
+        condition: service_healthy
 
   celery_worker:
     build:
@@ -61,10 +87,17 @@ services:
     container_name: sentineltrace-celery
     restart: unless-stopped
     command: celery -A app.worker.celery_app worker --loglevel=info
+    volumes:
+      - ./backend:/app
+    env_file:
+      - .env
     environment:
-      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-sentineltrace}:${POSTGRES_PASSWORD:-sentineltrace_pass}@postgres:5432/${POSTGRES_DB:-sentineltrace}
-      - REDIS_URL=redis://:${REDIS_PASSWORD:-redis_password}@redis:6379/0
-      - APP_ENV=development
+      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      - REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379/0
+      - NEO4J_URI=bolt://neo4j:7687
+      - NEO4J_USERNAME=${NEO4J_USERNAME}
+      - NEO4J_PASSWORD=${NEO4J_PASSWORD}
+      - APP_ENV=${APP_ENV}
     depends_on:
       redis:
         condition: service_healthy

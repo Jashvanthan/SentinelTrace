@@ -134,7 +134,7 @@ def set_refresh_token_cookie(response: Response, token: str) -> None:
         path=REFRESH_TOKEN_COOKIE_PATH,
         secure=settings.is_production,   # Secure flag only in production (requires HTTPS)
         httponly=True,
-        samesite="strict",
+        samesite="lax",
     )
 
 

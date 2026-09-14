@@ -11,12 +11,12 @@ export interface Workspace {
 
 export const workspacesApi = {
   listWorkspaces: async (): Promise<Workspace[]> => {
-    const { data } = await api.get('/api/v1/workspaces');
+    const { data } = await api.get('/workspaces');
     return data;
   },
   
   createWorkspace: async (name: string): Promise<Workspace> => {
-    const { data } = await api.post('/api/v1/workspaces', { name });
+    const { data } = await api.post('/workspaces', { name });
     return data;
   }
 };

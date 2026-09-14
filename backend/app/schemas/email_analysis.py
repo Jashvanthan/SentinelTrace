@@ -56,6 +56,8 @@ class EmailAnalysisSummary(BaseModel):
     severity: SeverityLevel | None
     confidence_score: float | None
     threat_score: float | None
+    source_provider: str | None = None
+    source_message_id: str | None = None
     created_at: datetime
     completed_at: datetime | None
     campaign_id: str | None
@@ -72,10 +74,11 @@ class EmailAnalysisDetail(EmailAnalysisSummary):
     dmarc_result: str | None
     received_headers: list | None
     ai_summary: str | None
-    ai_reasoning: str | None
+    # Privacy Boundary: Internal model reasoning (chain-of-thought) is strictly non-user-facing
     ai_indicators: list | None
     enrichment_data: dict | None
     geo_data: dict | None
+    diagnostic_status: dict | None = None
     raw_eml_sha256: str | None
     raw_eml_size_bytes: int | None
     iocs: list[IOCSchema] = []
@@ -93,3 +96,20 @@ class AnalysisTriggerResponse(BaseModel):
     analysis_id: uuid.UUID
     status: AnalysisStatus
     message: str
+
+
+class ObservedIPItem(BaseModel):
+    ip_address: str
+    source: str  # "received_hop" | "origin_header" | "extracted_ioc"
+    hop_number: int | None = None
+    is_private: bool = False
+    classification: str = "PUBLIC"  # PUBLIC, PRIVATE, LOOPBACK, LINK_LOCAL, MULTICAST, RESERVED, DOCUMENTATION
+    description: str
+
+
+class EmailObservedIPsResponse(BaseModel):
+    analysis_id: uuid.UUID
+    ips: list[ObservedIPItem]
+    public_ips_count: int
+    total_ips_count: int
+

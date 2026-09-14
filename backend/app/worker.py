@@ -20,6 +20,8 @@ from app.models.email_analysis import EmailAnalysis, AnalysisStatus
 from app.services.gmail_service import gmail_service
 from app.services.email_service import parse_eml
 from app.services.neo4j_service import get_neo4j_service
+from app.services.event_service import publish_workspace_event
+from app.schemas.events import RealTimeEvent, RealTimeEventType
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
@@ -38,7 +40,14 @@ async_session_maker = sessionmaker(engine, class_=AsyncSession, expire_on_commit
 
 def run_async(coro):
     """Run an async coroutine in the current thread's event loop."""
-    loop = asyncio.get_event_loop()
+    try:
+        loop = asyncio.get_event_loop()
+        if loop.is_closed():
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+    except RuntimeError:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
     return loop.run_until_complete(coro)
 
 
@@ -82,7 +91,8 @@ async def _async_sync_gmail_account(task, job_id: str, workspace_id_str: str, co
         job.started_at = datetime.now(timezone.utc)
         await db.commit()
 
-        page_token = connection.last_sync_cursor
+        # Always start fetching from the top of mailbox so new incoming messages are ingested
+        page_token = None
         
         try:
             while True:
@@ -119,60 +129,132 @@ async def _async_sync_gmail_account(task, job_id: str, workspace_id_str: str, co
                     if dup_check.scalar_one_or_none():
                         job.processed += 1
                         continue # Already processed
-                        
-                    # Fetch Raw
+
                     try:
-                        raw_bytes = await gmail_service.get_raw_message(db, connection, msg_id)
-                    except HttpError as e:
-                        if e.resp.status == 429:
-                            delay_seconds = 2 ** task.request.retries
-                            raise task.retry(exc=e, countdown=delay_seconds)
-                        logger.error(f"Failed to fetch message {msg_id}: {e}")
-                        job.failed += 1
-                        continue
-                        
-                    # Parse EML
-                    try:
-                        parsed = parse_eml(raw_bytes)
-                        
-                        analysis = EmailAnalysis(
-                            workspace_id=workspace_id,
-                            subject=parsed.subject,
-                            sender_email=parsed.sender_email,
-                            sender_display_name=parsed.sender_display_name,
-                            sender_domain=parsed.sender_domain,
-                            reply_to=parsed.reply_to,
-                            recipients=parsed.recipients,
-                            message_id=parsed.message_id,  # SMTP ID
-                            source_provider="google",
-                            source_message_id=msg_id,      # Gmail internal ID
-                            status=AnalysisStatus.COMPLETE,
-                            raw_eml_size_bytes=len(raw_bytes),
-                            spf_result=parsed.spf_result,
-                            dkim_result=parsed.dkim_result,
-                            dmarc_result=parsed.dmarc_result,
-                        )
-                        db.add(analysis)
-                        await db.commit()
-                        
-                        # Graph Correlation
-                        await neo4j.upsert_email_analysis(
-                            workspace_id=str(workspace_id),
-                            analysis_id=str(analysis.id),
-                            sender_email=parsed.sender_email,
-                            sender_domain=parsed.sender_domain,
-                            subject=parsed.subject,
-                            threat_category=None,
-                            severity=None,
-                            iocs=[],  # IOC extraction comes next in the pipeline
-                            received_ips=parsed.extracted_ips
-                        )
-                        
+                        import hashlib
+                        from email.utils import parsedate_to_datetime
+                        from app.services.threat_service import ThreatAnalysisPipeline
+
+                        pipeline_helper = ThreatAnalysisPipeline()
+                        raw_bytes = None
+                        try:
+                            raw_bytes = await gmail_service.get_raw_message(db, connection, msg_id)
+                        except Exception as raw_err:
+                            logger.warning(f"Could not fetch raw MIME for Gmail msg {msg_id}: {raw_err}")
+
+                        analysis_mode = (connection.analysis_mode or "AUTO").upper()
+
+                        if raw_bytes and len(raw_bytes) > 0:
+                            # Full raw RFC 5322 parsing
+                            parsed = parse_eml(raw_bytes)
+                            parsed_date = pipeline_helper._parse_email_date(parsed.email_date)
+
+                            analysis = EmailAnalysis(
+                                workspace_id=workspace_id,
+                                analyst_id=connection.user_id,
+                                source_provider="google",
+                                source_message_id=msg_id,
+                                subject=parsed.subject,
+                                sender_email=parsed.sender_email,
+                                sender_display_name=parsed.sender_display_name,
+                                sender_domain=parsed.sender_domain,
+                                reply_to=parsed.reply_to,
+                                recipients=parsed.recipients,
+                                message_id=parsed.message_id or msg_id,
+                                email_date=parsed_date,
+                                received_headers=parsed.received_headers,
+                                all_headers=parsed.all_headers,
+                                authentication_results=parsed.authentication_results,
+                                spf_result=parsed.spf_result,
+                                dkim_result=parsed.dkim_result,
+                                dmarc_result=parsed.dmarc_result,
+                                raw_eml_sha256=hashlib.sha256(raw_bytes).hexdigest(),
+                                raw_eml_size_bytes=len(raw_bytes),
+                                status=AnalysisStatus.PENDING,
+                            )
+                            db.add(analysis)
+                            await db.commit()
+                            await db.refresh(analysis)
+
+                            if analysis_mode == "AUTO":
+                                # Mode A: Automatically queue and execute full threat analysis pipeline
+                                try:
+                                    await pipeline_helper.run(db, analysis, raw_bytes)
+                                except Exception as pipe_err:
+                                    logger.error(f"Threat analysis failed on Gmail msg {msg_id}: {pipe_err}")
+                            else:
+                                # Mode B: Monitor & Review — Fetch metadata/content only, STOP without automatic AI/threat analysis
+                                logger.info(f"Ingested Gmail msg {msg_id} in MANUAL mode (PENDING review)")
+                        else:
+                            # Fallback: metadata message format
+                            from app.services.email_service import _parse_address, _decode_header_value
+
+                            msg_data = await gmail_service.get_message(db, connection, msg_id)
+                            payload = msg_data.get('payload', {})
+                            headers_list = payload.get('headers', [])
+                            headers_dict = {
+                                str(h.get('name', '')).lower(): str(h.get('value', ''))
+                                for h in headers_list if isinstance(h, dict)
+                            }
+
+                            from_raw = headers_dict.get('from', '')
+                            sender_email, sender_display_name = _parse_address(from_raw)
+                            sender_domain = sender_email.split('@')[-1] if sender_email and '@' in sender_email else None
+
+                            to_raw = headers_dict.get('to', '')
+                            recipients = [addr.strip() for addr in to_raw.split(',') if addr.strip()] if to_raw else []
+
+                            subject_raw = headers_dict.get('subject') or msg_data.get('snippet') or '(No Subject)'
+                            subject = _decode_header_value(subject_raw)
+
+                            date_raw = headers_dict.get('date')
+                            parsed_date = None
+                            if date_raw:
+                                try:
+                                    parsed_date = parsedate_to_datetime(date_raw)
+                                except Exception:
+                                    parsed_date = None
+
+                            msg_sha256 = hashlib.sha256(f"{msg_id}_{subject}_{from_raw}_{to_raw}_{date_raw}".encode()).hexdigest()
+
+                            analysis = EmailAnalysis(
+                                workspace_id=workspace_id,
+                                analyst_id=connection.user_id,
+                                source_provider="google",
+                                source_message_id=msg_id,
+                                subject=subject,
+                                sender_email=sender_email or None,
+                                sender_display_name=sender_display_name or None,
+                                sender_domain=sender_domain,
+                                recipients=recipients,
+                                reply_to=headers_dict.get('reply-to'),
+                                message_id=headers_dict.get('message-id', msg_id),
+                                email_date=parsed_date,
+                                raw_eml_sha256=msg_sha256,
+                                status=AnalysisStatus.COMPLETE if analysis_mode == "AUTO" else AnalysisStatus.PENDING,
+                                threat_score=0.0 if analysis_mode == "AUTO" else None,
+                            )
+                            db.add(analysis)
+                            await db.commit()
+
                         job.processed += 1
+
+                        # Publish SSE Event that email is synced and ready on the dashboard
+                        event = RealTimeEvent(
+                            event_type=RealTimeEventType.ANALYSIS_COMPLETED if analysis.status == AnalysisStatus.COMPLETE else RealTimeEventType.EMAIL_RECEIVED,
+                            workspace_id=workspace_id,
+                            title="Gmail Ingested" if analysis_mode == "MANUAL" else "Gmail Analyzed",
+                            message=f"Synced: {analysis.subject or '(No Subject)'}",
+                            resource_type="email_analysis",
+                            resource_id=str(analysis.id)
+                        )
+                        await publish_workspace_event(workspace_id, event)
+
                     except Exception as e:
-                        logger.error(f"Failed to process message {msg_id}: {e}")
+                        logger.error(f"Failed to ingest Gmail message {msg_id}: {e}")
+                        await db.rollback()
                         job.failed += 1
-                        
+
                 # 3. Handle Pagination
                 page_token = response.get('nextPageToken')
                 connection.last_sync_cursor = page_token
@@ -228,4 +310,268 @@ async def _async_triage_email(task, workspace_id_str: str, email_analysis_id_str
                 "analysis_run_id": analysis_run_id,
                 "status": "FAILED",
                 "error": str(e)
+            }
+
+
+@celery_app.task(bind=True, max_retries=3)
+def analyze_uploaded_eml(self, workspace_id_str: str, analysis_id_str: str, raw_eml_bytes_hex: str) -> dict:
+    """
+    Background job to execute the threat analysis pipeline for an uploaded EML file.
+    Runs enrichments, geo, AI classification/LLM, Neo4j, risk scoring, and persists results.
+    """
+    return run_async(_async_analyze_uploaded_eml(self, workspace_id_str, analysis_id_str, raw_eml_bytes_hex))
+
+
+async def _async_analyze_uploaded_eml(task, workspace_id_str: str, analysis_id_str: str, raw_eml_bytes_hex: str) -> dict:
+    import uuid
+    from app.services.threat_service import ThreatAnalysisPipeline
+    from app.services.audit_service import write_audit_log
+
+    workspace_id = uuid.UUID(workspace_id_str)
+    analysis_id = uuid.UUID(analysis_id_str)
+    raw_eml_bytes = bytes.fromhex(raw_eml_bytes_hex)
+
+    async with async_session_maker() as db:
+        result = await db.execute(
+            select(EmailAnalysis).where(
+                EmailAnalysis.id == analysis_id,
+                EmailAnalysis.workspace_id == workspace_id,
+            )
+        )
+        analysis = result.scalar_one_or_none()
+        if not analysis:
+            logger.error(f"EmailAnalysis {analysis_id} not found in workspace {workspace_id}")
+            return {"status": "FAILED", "error": "Analysis not found"}
+
+        analysis.status = AnalysisStatus.PROCESSING
+        await db.commit()
+
+        pipeline = ThreatAnalysisPipeline()
+        try:
+            await pipeline.run(db, analysis, raw_eml_bytes)
+            await write_audit_log(
+                db,
+                action="EMAIL_FORENSIC_ANALYSIS_COMPLETED",
+                user_id=analysis.analyst_id,
+                resource_type="email_analysis",
+                resource_id=str(analysis.id),
+                details={
+                    "subject": analysis.subject,
+                    "threat_category": str(analysis.threat_category.value if hasattr(analysis.threat_category, "value") else analysis.threat_category),
+                    "severity": str(analysis.severity.value if hasattr(analysis.severity, "value") else analysis.severity),
+                    "threat_score": analysis.threat_score,
+                },
+                outcome="SUCCESS" if analysis.status == AnalysisStatus.COMPLETE else "FAILURE",
+            )
+            await db.commit()
+
+            # Publish SSE real-time event
+            event = RealTimeEvent(
+                event_type=RealTimeEventType.ANALYSIS_COMPLETED,
+                workspace_id=workspace_id,
+                title="Analysis Complete",
+                message=f"Forensic analysis completed for: {analysis.subject or '(No Subject)'}",
+                severity=str(analysis.severity.value if hasattr(analysis.severity, 'value') else analysis.severity) if analysis.severity else "INFO",
+                resource_type="email_analysis",
+                resource_id=str(analysis.id),
+            )
+            await publish_workspace_event(workspace_id, event)
+
+            return {
+                "workspace_id": workspace_id_str,
+                "analysis_id": analysis_id_str,
+                "status": analysis.status.value if hasattr(analysis.status, "value") else str(analysis.status),
+                "threat_score": analysis.threat_score,
+            }
+        except Exception as e:
+            logger.error(f"Analysis pipeline failed for {analysis_id}: {e}", exc_info=True)
+            analysis.status = AnalysisStatus.FAILED
+            analysis.error_message = str(e)
+            await write_audit_log(
+                db,
+                action="EMAIL_FORENSIC_ANALYSIS_FAILED",
+                user_id=analysis.analyst_id,
+                resource_type="email_analysis",
+                resource_id=str(analysis.id),
+                details={"error": str(e)},
+                outcome="FAILURE",
+                error_message=str(e),
+            )
+            await db.commit()
+
+            # Publish SSE real-time error event
+            event = RealTimeEvent(
+                event_type=RealTimeEventType.ANALYSIS_FAILED,
+                workspace_id=workspace_id,
+                title="Analysis Failed",
+                message=f"Forensic analysis failed for: {analysis.subject or '(No Subject)'}",
+                severity="HIGH",
+                resource_type="email_analysis",
+                resource_id=str(analysis.id),
+            )
+            await publish_workspace_event(workspace_id, event)
+
+            return {
+                "workspace_id": workspace_id_str,
+                "analysis_id": analysis_id_str,
+                "status": "FAILED",
+                "error": str(e),
+            }
+
+
+@celery_app.task(bind=True, max_retries=3)
+def analyze_email_job(self, workspace_id_str: str, analysis_id_str: str) -> dict:
+    """
+    Background job to execute full forensic threat analysis for an existing email analysis record.
+    Used for manual review on-demand analysis.
+    """
+    return run_async(_async_analyze_email_job(self, workspace_id_str, analysis_id_str))
+
+
+async def _async_analyze_email_job(task, workspace_id_str: str, analysis_id_str: str) -> dict:
+    import uuid
+    from app.services.threat_service import ThreatAnalysisPipeline
+    from app.services.audit_service import write_audit_log
+
+    workspace_id = uuid.UUID(workspace_id_str)
+    analysis_id = uuid.UUID(analysis_id_str)
+
+    async with async_session_maker() as db:
+        result = await db.execute(
+            select(EmailAnalysis).where(
+                EmailAnalysis.id == analysis_id,
+                EmailAnalysis.workspace_id == workspace_id,
+            )
+        )
+        analysis = result.scalar_one_or_none()
+        if not analysis:
+            logger.error(f"EmailAnalysis {analysis_id} not found in workspace {workspace_id}")
+            return {"status": "FAILED", "error": "Analysis not found"}
+
+        if analysis.status == AnalysisStatus.COMPLETE and analysis.threat_score is not None:
+            logger.info(f"EmailAnalysis {analysis_id} is already COMPLETE, skipping duplicate analysis.")
+            return {"status": "COMPLETE", "analysis_id": analysis_id_str}
+
+        analysis.status = AnalysisStatus.PROCESSING
+        await db.commit()
+
+        # Publish SSE real-time event: started
+        event = RealTimeEvent(
+            event_type=RealTimeEventType.ANALYSIS_STARTED,
+            workspace_id=workspace_id,
+            title="Analysis Started",
+            message=f"Forensic threat analysis initiated for: {analysis.subject or '(No Subject)'}",
+            resource_type="email_analysis",
+            resource_id=str(analysis.id),
+        )
+        await publish_workspace_event(workspace_id, event)
+
+        pipeline = ThreatAnalysisPipeline()
+        try:
+            raw_bytes = None
+            if analysis.source_provider in ("google", "gmail") and analysis.source_message_id:
+                conn_res = await db.execute(
+                    select(GmailConnection).where(
+                        GmailConnection.workspace_id == workspace_id,
+                        GmailConnection.status == "ACTIVE",
+                    )
+                )
+                connection = conn_res.scalar_one_or_none()
+                if not connection:
+                    conn_res = await db.execute(
+                        select(GmailConnection).where(GmailConnection.workspace_id == workspace_id)
+                    )
+                    connection = conn_res.scalar_one_or_none()
+
+                if connection:
+                    try:
+                        raw_bytes = await gmail_service.get_raw_message(db, connection, analysis.source_message_id)
+                    except Exception as raw_e:
+                        logger.warning(f"Could not retrieve raw MIME from Gmail: {raw_e}")
+
+            if not raw_bytes or len(raw_bytes) == 0:
+                # Synthesize standard EML bytes from stored headers/subject/body
+                headers_lines = []
+                if analysis.subject:
+                    headers_lines.append(f"Subject: {analysis.subject}")
+                if analysis.sender_email:
+                    headers_lines.append(f"From: {analysis.sender_email}")
+                if analysis.recipients:
+                    headers_lines.append(f"To: {', '.join(analysis.recipients)}")
+                if analysis.message_id:
+                    headers_lines.append(f"Message-ID: <{analysis.message_id}>")
+                if analysis.received_headers:
+                    for h in analysis.received_headers:
+                        headers_lines.append(f"Received: {h}")
+                eml_text = "\r\n".join(headers_lines) + "\r\n\r\n" + (analysis.subject or "Email content")
+                raw_bytes = eml_text.encode("utf-8")
+
+            await pipeline.run(db, analysis, raw_bytes)
+            await write_audit_log(
+                db,
+                action="EMAIL_FORENSIC_ANALYSIS_COMPLETED",
+                user_id=analysis.analyst_id,
+                resource_type="email_analysis",
+                resource_id=str(analysis.id),
+                details={
+                    "subject": analysis.subject,
+                    "threat_category": str(analysis.threat_category.value if hasattr(analysis.threat_category, "value") else analysis.threat_category),
+                    "severity": str(analysis.severity.value if hasattr(analysis.severity, "value") else analysis.severity),
+                    "threat_score": analysis.threat_score,
+                },
+                outcome="SUCCESS" if analysis.status == AnalysisStatus.COMPLETE else "FAILURE",
+            )
+            await db.commit()
+
+            # Publish SSE real-time event: complete
+            event = RealTimeEvent(
+                event_type=RealTimeEventType.ANALYSIS_COMPLETED,
+                workspace_id=workspace_id,
+                title="Analysis Complete",
+                message=f"Forensic analysis completed for: {analysis.subject or '(No Subject)'}",
+                severity=str(analysis.severity.value if hasattr(analysis.severity, 'value') else analysis.severity) if analysis.severity else "INFO",
+                resource_type="email_analysis",
+                resource_id=str(analysis.id),
+            )
+            await publish_workspace_event(workspace_id, event)
+
+            return {
+                "workspace_id": workspace_id_str,
+                "analysis_id": analysis_id_str,
+                "status": analysis.status.value if hasattr(analysis.status, "value") else str(analysis.status),
+                "threat_score": analysis.threat_score,
+            }
+        except Exception as e:
+            logger.error(f"Manual analysis pipeline failed for {analysis_id}: {e}", exc_info=True)
+            analysis.status = AnalysisStatus.FAILED
+            analysis.error_message = str(e)
+            await write_audit_log(
+                db,
+                action="EMAIL_FORENSIC_ANALYSIS_FAILED",
+                user_id=analysis.analyst_id,
+                resource_type="email_analysis",
+                resource_id=str(analysis.id),
+                details={"error": str(e)},
+                outcome="FAILURE",
+                error_message=str(e),
+            )
+            await db.commit()
+
+            # Publish SSE real-time error event
+            event = RealTimeEvent(
+                event_type=RealTimeEventType.ANALYSIS_FAILED,
+                workspace_id=workspace_id,
+                title="Analysis Failed",
+                message=f"Forensic analysis failed for: {analysis.subject or '(No Subject)'}",
+                severity="HIGH",
+                resource_type="email_analysis",
+                resource_id=str(analysis.id),
+            )
+            await publish_workspace_event(workspace_id, event)
+
+            return {
+                "workspace_id": workspace_id_str,
+                "analysis_id": analysis_id_str,
+                "status": "FAILED",
+                "error": str(e),
             }

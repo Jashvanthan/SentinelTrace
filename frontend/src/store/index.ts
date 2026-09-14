@@ -39,13 +39,14 @@ export const useAuthStore = create<AuthState>()(
     }),
     {
       name: 'sentineltrace-auth',
-      // Only persist user, not token (token lives in memory)
-      partialize: (state) => ({ user: state.user, isAuthenticated: state.isAuthenticated }),
+      partialize: (state) => ({
+        user: state.user,
+        isAuthenticated: state.isAuthenticated,
+        accessToken: state.accessToken,
+      }),
       onRehydrateStorage: () => (state) => {
-        // On page reload, access token is gone — clear auth to force re-login via refresh cookie
-        if (state) {
-          state.accessToken = null;
-          setAccessToken(null);
+        if (state?.accessToken) {
+          setAccessToken(state.accessToken);
         }
       },
     }

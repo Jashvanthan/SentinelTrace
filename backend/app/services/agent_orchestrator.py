@@ -126,10 +126,18 @@ class AgentOrchestrator:
         """
         logger.info(f"triage_started for analysis_id={email_analysis_id}, run_id={analysis_run_id}")
 
-        # 1. Fetch analysis with strict workspace isolation
-        stmt = select(EmailAnalysis).where(
-            EmailAnalysis.id == email_analysis_id,
-            EmailAnalysis.workspace_id == workspace_id
+        # 1. Fetch analysis with strict workspace isolation and eager load relations
+        from sqlalchemy.orm import selectinload
+        stmt = (
+            select(EmailAnalysis)
+            .where(
+                EmailAnalysis.id == email_analysis_id,
+                EmailAnalysis.workspace_id == workspace_id
+            )
+            .options(
+                selectinload(EmailAnalysis.iocs),
+                selectinload(EmailAnalysis.attachments),
+            )
         )
         result = await db.execute(stmt)
         analysis = result.scalar_one_or_none()
@@ -138,40 +146,106 @@ class AgentOrchestrator:
             logger.error(f"Security Violation or Missing Record: EmailAnalysis {email_analysis_id} not found in Workspace {workspace_id}")
             raise OrchestrationError("Email analysis not found or workspace mismatch")
 
-        # 2. Reconstruct context from deterministic pipeline data
-        # For this prototype, we simulate fetching the deterministic data (URLs, attachments, intel).
-        # In a real app, this data might be loaded via ORM relationships like `analysis.attachments`.
-        
-        # We ensure bounded context.
-        mock_urls = getattr(analysis, "extracted_urls", [])[:MAX_URLS]
-        mock_attachments = getattr(analysis, "attachments_data", [])[:MAX_ATTACHMENTS]
+        # 2. Reconstruct authentic context from deterministic pipeline data
+        iocs_list = list(analysis.iocs or [])
+        real_urls = [
+            ioc.value for ioc in iocs_list 
+            if str(ioc.ioc_type).upper() in ("URL", "IOCTYPE.URL")
+        ][:MAX_URLS]
+
+        real_ips = [
+            ioc.value for ioc in iocs_list 
+            if str(ioc.ioc_type).upper() in ("IP_ADDRESS", "IP", "IPADDRESS", "IOCTYPE.IP_ADDRESS")
+        ]
+        geo_data = getattr(analysis, "geo_data", {}) or {}
+        if not real_ips and isinstance(geo_data, dict):
+            for item in geo_data.get("ips", []):
+                if isinstance(item, dict) and item.get("ip_address"):
+                    real_ips.append(item["ip_address"])
+            if geo_data.get("primary_ip"):
+                real_ips.insert(0, geo_data["primary_ip"])
+        real_ips = list(dict.fromkeys(real_ips))[:20]
+
+        real_attachments = [
+            {
+                "filename": att.filename,
+                "content_type": att.content_type,
+                "size_bytes": att.size_bytes,
+                "sha256_hash": att.sha256_hash,
+                "is_malicious": att.is_malicious,
+                "vt_detections": att.vt_detections,
+                "vt_total_engines": att.vt_total_engines,
+            }
+            for att in (analysis.attachments or [])
+        ][:MAX_ATTACHMENTS]
 
         enrichment_data = getattr(analysis, "enrichment_data", {}) or {}
+        has_malicious = any(ioc.is_malicious for ioc in iocs_list) or any(att.get("is_malicious") for att in real_attachments)
+
+        primary_ip = geo_data.get("primary_ip") or geo_data.get("ip_address") or (real_ips[0] if real_ips else None)
+        ip_intelligence = {
+            "primary_ip": primary_ip,
+            "country": geo_data.get("country"),
+            "city": geo_data.get("city"),
+            "isp": geo_data.get("isp"),
+            "org": geo_data.get("org"),
+            "asn": geo_data.get("asn"),
+            "routing_type": geo_data.get("routing_type"),
+            "routing_label": geo_data.get("routing_label"),
+            "virustotal": enrichment_data.get("virustotal"),
+            "abuseipdb": enrichment_data.get("abuseipdb"),
+            "shodan": enrichment_data.get("shodan"),
+            "transit_hops": geo_data.get("ips", []),
+        }
+
+        domain_intelligence = {
+            "sender_domain": analysis.sender_domain,
+            "spf_result": analysis.spf_result,
+            "dkim_result": analysis.dkim_result,
+            "dmarc_result": analysis.dmarc_result,
+            "intel": enrichment_data.get(f"domain_{analysis.sender_domain}"),
+        }
+
+        body_snippet = analysis.ai_summary or analysis.subject or "Legitimate email correspondence"
 
         kwargs_map = {
             "email_nlp": {
-                "parsed_body": getattr(analysis, "ai_summary", "Email body placeholder") or "Email body placeholder",
-                "has_malicious_iocs": False,
-                "extracted_urls": mock_urls,
-                "extracted_ips": [],
+                "parsed_body": body_snippet,
+                "has_malicious_iocs": has_malicious,
+                "extracted_urls": real_urls,
+                "extracted_ips": real_ips,
             },
             "header_auth": {},
             "url_domain": {
-                "urls": mock_urls,
-                "url_intelligence": enrichment_data.get("url_intelligence", {}),
-                "raw_urls_context": [],
+                "urls": real_urls,
+                "url_intelligence": {
+                    url: enrichment_data.get(f"url_{url[:50]}") for url in real_urls
+                },
+                "raw_urls_context": real_urls,
             },
             "sender_ip": {
-                "ip_intelligence": enrichment_data.get("ip_intelligence", {}),
-                "domain_intelligence": enrichment_data.get("domain_intelligence", {}),
-                "raw_sender_header": f"{getattr(analysis, 'sender_display_name', '')} <{getattr(analysis, 'sender_email', '')}>"
+                "ip_intelligence": ip_intelligence,
+                "domain_intelligence": domain_intelligence,
+                "raw_sender_header": f"{getattr(analysis, 'sender_display_name', '') or ''} <{getattr(analysis, 'sender_email', '') or ''}>"
             },
             "attachment": {
-                "attachments": mock_attachments,
+                "attachments": real_attachments,
             },
             "threat_intel": {
-                "threat_intelligence": enrichment_data.get("threat_intelligence", {}),
-                "ioc_context": [],
+                "threat_intelligence": {
+                    "summary": enrichment_data,
+                    "iocs": [
+                        {
+                            "type": str(ioc.ioc_type.value if hasattr(ioc.ioc_type, "value") else ioc.ioc_type),
+                            "value": ioc.value,
+                            "is_malicious": ioc.is_malicious,
+                            "threat_score": ioc.threat_score,
+                            "enrichment": ioc.enrichment_data,
+                        }
+                        for ioc in iocs_list
+                    ],
+                },
+                "ioc_context": [ioc.value for ioc in iocs_list],
             },
         }
 

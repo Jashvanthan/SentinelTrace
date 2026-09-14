@@ -25,8 +25,8 @@ class Settings(BaseSettings):
     APP_NAME: str = "SentinelTrace"
     APP_ENV: Literal["development", "staging", "production"] = "development"
     APP_DEBUG: bool = False
-    APP_SECRET_KEY: str = Field(default="change_me", min_length=8)
-    ALLOWED_ORIGINS: list[str] = ["http://localhost:5173", "http://127.0.0.1:5173"]
+    APP_SECRET_KEY: str = Field(..., min_length=32)
+    ALLOWED_ORIGINS: str | list[str] = ["http://localhost:5173", "http://127.0.0.1:5173"]
     FRONTEND_URL: str = "http://localhost:5173"
 
     @field_validator("ALLOWED_ORIGINS", mode="before")
@@ -51,7 +51,7 @@ class Settings(BaseSettings):
     REDIS_URL: str = "redis://localhost:6379/0"
 
     # ── JWT ──────────────────────────────────────────────────────────────────
-    JWT_SECRET: str = Field(default="change_me", min_length=8)
+    JWT_SECRET: str = Field(..., min_length=32)
     JWT_ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 15
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
@@ -66,7 +66,7 @@ class Settings(BaseSettings):
     GMAIL_CLIENT_ID: str = ""
     GMAIL_CLIENT_SECRET: str = ""
     GMAIL_REDIRECT_URI: str = "http://localhost:8000/api/v1/integrations/gmail/callback"
-    GMAIL_SCOPES: str = "https://www.googleapis.com/auth/gmail.readonly"
+    GMAIL_SCOPES: str = "https://www.googleapis.com/auth/gmail.readonly openid https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/userinfo.profile"
     GMAIL_ENCRYPTION_KEY: str = Field("", min_length=43) # 32 bytes base64 encoded for Fernet
 
     # ── Gmail API ────────────────────────────────────────────────────────────
@@ -80,6 +80,10 @@ class Settings(BaseSettings):
     # ── IP Geolocation ───────────────────────────────────────────────────────
     IPAPI_KEY: str = ""
     MAXMIND_DB_PATH: str = ""
+    MAXMIND_CITY_DB_PATH: str = ""
+    MAXMIND_ASN_DB_PATH: str = ""
+
+
 
     # ── AI / LLM ─────────────────────────────────────────────────────────────
     LLM_PROVIDER: Literal["openai", "anthropic", "local"] = "openai"
@@ -113,7 +117,7 @@ class Settings(BaseSettings):
 
     @property
     def is_production(self) -> bool:
-        return self.APP_ENV == "production"
+        return self.APP_ENV in ["production", "staging"]
 
     @property
     def is_development(self) -> bool:

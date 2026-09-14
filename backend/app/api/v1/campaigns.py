@@ -217,3 +217,46 @@ async def get_campaign_members(
     )
     
     return result.scalars().all()
+
+
+@router.get("/{campaign_id}/timeline")
+async def get_campaign_timeline(
+    workspace_id: uuid.UUID,
+    campaign_id: uuid.UUID,
+    db: DbSession,
+    member: Annotated[object, Depends(require_workspace_role("owner", "admin", "analyst", "viewer"))],
+):
+    """
+    Get chronological UTC forensic investigation timeline for a campaign.
+    """
+    from app.services.forensic_timeline_service import ForensicTimelineService
+    
+    timeline = await ForensicTimelineService.build_campaign_timeline(
+        db=db,
+        workspace_id=workspace_id,
+        campaign_id=campaign_id,
+    )
+    return {"campaign_id": str(campaign_id), "workspace_id": str(workspace_id), "timeline": timeline}
+
+
+@router.get("/{campaign_id}/graph")
+async def get_campaign_graph_by_id(
+    workspace_id: uuid.UUID,
+    campaign_id: uuid.UUID,
+    db: DbSession,
+    member: Annotated[object, Depends(require_workspace_role("owner", "admin", "analyst", "viewer"))],
+    depth: int = Query(2, ge=1, le=5),
+):
+    """
+    Get multi-hop Neo4j campaign correlation graph.
+    """
+    from app.services.neo4j_service import get_neo4j_service
+    
+    neo4j = get_neo4j_service()
+    graph = await neo4j.get_campaign_graph(
+        workspace_id=str(workspace_id),
+        campaign_id=str(campaign_id),
+        depth=depth,
+    )
+    return graph
+

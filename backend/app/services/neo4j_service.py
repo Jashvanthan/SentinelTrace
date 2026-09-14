@@ -32,6 +32,8 @@ class Neo4jService:
             auth=(settings.NEO4J_USERNAME, settings.NEO4J_PASSWORD),
             database=settings.NEO4J_DATABASE,
             max_connection_pool_size=10,
+            connection_timeout=1.0,
+            max_transaction_retry_time=1.0,
         )
 
     async def close(self) -> None:
@@ -62,13 +64,23 @@ class Neo4jService:
         """
         Write an email analysis into the graph, creating/merging all related nodes.
         """
-        async with self._driver.session() as session:
-            await session.execute_write(
-                self._write_analysis,
-                workspace_id, analysis_id, sender_email, sender_domain,
-                subject, threat_category, severity,
-                iocs, received_ips,
-            )
+        import asyncio
+        try:
+            await asyncio.wait_for(self._driver.verify_connectivity(), timeout=0.5)
+        except Exception as conn_err:
+            logger.debug(f"Neo4j is unavailable, skipping graph write: {conn_err}")
+            return
+
+        try:
+            async with self._driver.session() as session:
+                await session.execute_write(
+                    self._write_analysis,
+                    workspace_id, analysis_id, sender_email, sender_domain,
+                    subject, threat_category, severity,
+                    iocs, received_ips,
+                )
+        except Exception as err:
+            logger.warning(f"Neo4j write failed: {err}")
 
     @staticmethod
     async def _write_analysis(
@@ -192,6 +204,7 @@ class Neo4jService:
 
     async def get_campaign_graph(
         self,
+        workspace_id: str,
         campaign_id: str | None = None,
         analysis_id: str | None = None,
         depth: int = 2,
@@ -199,24 +212,28 @@ class Neo4jService:
         """
         Return a subgraph suitable for frontend visualization.
         """
+        safe_depth = max(1, min(int(depth), 5))
         async with self._driver.session() as session:
             if analysis_id:
-                query = """
-                MATCH path = (e:Email {analysis_id: $analysis_id})-[*1..$depth]-(n)
+                query = f"""
+                MATCH path = (e:Email {{analysis_id: $analysis_id, workspace_id: $workspace_id}})-[*1..{safe_depth}]-(n)
+                WHERE NOT (n:Email AND n.workspace_id <> $workspace_id)
                 RETURN nodes(path) AS nodes, relationships(path) AS rels
                 """
-                params: dict = {"analysis_id": analysis_id, "depth": depth}
+                params: dict = {"analysis_id": analysis_id, "workspace_id": workspace_id}
             else:
-                query = """
-                MATCH path = (e:Email)-[*1..$depth]-(n)
+                query = f"""
+                MATCH path = (e:Email {{workspace_id: $workspace_id}})-[*1..{safe_depth}]-(n)
+                WHERE NOT (n:Email AND n.workspace_id <> $workspace_id)
                 RETURN nodes(path) AS nodes, relationships(path) AS rels
                 LIMIT 200
                 """
-                params = {"depth": depth}
+                params = {"workspace_id": workspace_id}
 
             result = await session.run(query, **params)
             nodes: dict[str, dict] = {}
             edges: list[dict] = []
+            seen_edges: set[tuple[str, str, str]] = set()
 
             async for record in result:
                 for node in (record.get("nodes") or []):
@@ -226,15 +243,20 @@ class Neo4jService:
                             "id": nid,
                             "node_type": list(node.labels)[0] if node.labels else "Unknown",
                             "label": self._node_label(node),
-                            "properties": dict(node),
+                            "properties": self._clean_props(dict(node)),
                         }
                 for rel in (record.get("rels") or []):
-                    edges.append({
-                        "source": str(rel.start_node.id),
-                        "target": str(rel.end_node.id),
-                        "relationship_type": rel.type,
-                        "properties": dict(rel),
-                    })
+                    source_id = str(rel.start_node.id)
+                    target_id = str(rel.end_node.id)
+                    edge_key = (source_id, target_id, rel.type)
+                    if edge_key not in seen_edges:
+                        seen_edges.add(edge_key)
+                        edges.append({
+                            "source": source_id,
+                            "target": target_id,
+                            "relationship_type": rel.type,
+                            "properties": self._clean_props(dict(rel)),
+                        })
 
             return {
                 "campaign_id": campaign_id,
@@ -244,16 +266,41 @@ class Neo4jService:
             }
 
     @staticmethod
+    def _clean_props(props: dict[str, Any]) -> dict[str, Any]:
+        """Convert non-serializable Neo4j types (like DateTime) to JSON-safe primitives."""
+        cleaned: dict[str, Any] = {}
+        for k, v in props.items():
+            if hasattr(v, "iso_format"):
+                cleaned[k] = v.iso_format()
+            elif hasattr(v, "isoformat"):
+                cleaned[k] = v.isoformat()
+            elif isinstance(v, (str, int, float, bool, type(None))):
+                cleaned[k] = v
+            elif isinstance(v, (list, tuple, set)):
+                cleaned[k] = [
+                    x.iso_format() if hasattr(x, "iso_format") else (x.isoformat() if hasattr(x, "isoformat") else x)
+                    for x in v
+                ]
+            elif isinstance(v, dict):
+                cleaned[k] = Neo4jService._clean_props(v)
+            else:
+                cleaned[k] = str(v)
+        return cleaned
+
+    @staticmethod
     def _node_label(node) -> str:
         labels = list(node.labels)
         node_type = labels[0] if labels else "Unknown"
         props = dict(node)
+        if node_type == "Email":
+            return props.get("subject") or (props.get("analysis_id", "")[:8]) or "Email"
         return (
+            props.get("subject") or
             props.get("email") or
-            props.get("analysis_id", "")[:8] or
             props.get("name") or
             props.get("address") or
             props.get("value", "")[:32] or
+            (props.get("analysis_id", "")[:8]) or
             node_type
         )
 

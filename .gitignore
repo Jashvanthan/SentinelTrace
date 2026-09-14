@@ -164,3 +164,8 @@ test-results/
 .sentineltrace/
 tmp/
 temp/
+scratch/
+staging_backup.sql
+*.sql
+test_results.txt
+docker/api.env

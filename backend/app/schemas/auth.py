@@ -62,7 +62,25 @@ class GoogleOAuthURLResponse(BaseModel):
     state: str
 
 
+class GooglePendingResponse(BaseModel):
+    """Response when Google OAuth succeeds but user has no SentinelTrace account yet."""
+    pending_token: str
+    email: str
+    full_name: str
+    picture: str | None = None
+
+
+class GoogleRegistrationRequest(BaseModel):
+    """Request body for POST /auth/google/complete-registration."""
+    pending_token: str = Field(..., min_length=10)
+
+
 # ── Admin Schemas ─────────────────────────────────────────────────────────────
+
+class UserProfileUpdateRequest(BaseModel):
+    full_name: str | None = Field(None, min_length=1, max_length=256)
+    avatar_url: str | None = None
+
 
 class UserUpdateRequest(BaseModel):
     full_name: str | None = Field(None, min_length=2, max_length=256)

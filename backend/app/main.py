@@ -15,12 +15,18 @@ from app.api.v1.campaigns import router as campaigns_router
 from app.api.v1.emails import router as emails_router
 from app.api.v1.workspaces import router as workspaces_router
 from app.api.v1.integrations import router as integrations_router
+from app.api.v1.events import router as events_router
+from app.api.v1.activity import router as activity_router
 from app.api.v1.intel import (
     intel_router,
     geo_router,
     graph_router,
-    reports_router,
+    reports_router as intel_reports_router,
 )
+from app.api.v1.ip_trace import router as ip_trace_router
+from app.api.v1.investigation import router as investigation_router
+from app.api.v1.investigations import router as investigations_router
+from app.api.v1.reports import router as investigation_reports_router
 from app.core.config import get_settings
 from app.core.logging import RequestLoggingMiddleware, configure_logging, get_logger
 
@@ -100,6 +106,15 @@ def create_app() -> FastAPI:
     # ── Middleware ─────────────────────────────────────────────────────────────
     app.add_middleware(RequestLoggingMiddleware)
 
+    @app.middleware("http")
+    async def add_security_headers(request, call_next):
+        response = await call_next(request)
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["X-XSS-Protection"] = "1; mode=block"
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        return response
+
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.ALLOWED_ORIGINS,
@@ -112,7 +127,7 @@ def create_app() -> FastAPI:
     if settings.is_production:
         app.add_middleware(
             TrustedHostMiddleware,
-            allowed_hosts=["your-domain.com", "*.your-domain.com"],
+            allowed_hosts=["localhost", "127.0.0.1", "your-domain.com", "*.your-domain.com"],
         )
 
     # ── Routers ────────────────────────────────────────────────────────────────
@@ -120,20 +135,31 @@ def create_app() -> FastAPI:
 
     app.include_router(auth_router, prefix=API_PREFIX)
     app.include_router(workspaces_router, prefix=API_PREFIX)
+    app.include_router(events_router, prefix=API_PREFIX)
     app.include_router(emails_router, prefix=API_PREFIX)
     app.include_router(campaigns_router, prefix=API_PREFIX)
     app.include_router(integrations_router, prefix=API_PREFIX, tags=["integrations"])
     app.include_router(intel_router, prefix=API_PREFIX)
     app.include_router(geo_router, prefix=API_PREFIX)
+    app.include_router(ip_trace_router, prefix=API_PREFIX)
     app.include_router(graph_router, prefix=API_PREFIX)
-    app.include_router(reports_router, prefix=API_PREFIX)
+    app.include_router(intel_reports_router, prefix=API_PREFIX)
+    app.include_router(activity_router, prefix=API_PREFIX)
+    app.include_router(investigation_router, prefix=API_PREFIX)
+    app.include_router(investigations_router, prefix=API_PREFIX)
+    app.include_router(investigation_reports_router, prefix=API_PREFIX)
+
+    # Alias route for /api/v1/analyses/{analysis_id}/ip-trace
+    app.include_router(ip_trace_router, prefix=f"{API_PREFIX}/analyses")
 
     # ── Health Check ──────────────────────────────────────────────────────────
     @app.get("/health", tags=["Health"])
+    @app.get(f"{API_PREFIX}/health", tags=["Health"])
     async def health():
         return {"status": "healthy", "service": "sentineltrace-api"}
 
     @app.get("/health/dependencies", tags=["Health"])
+    @app.get(f"{API_PREFIX}/health/dependencies", tags=["Health"])
     async def health_dependencies():
         deps = {
             "api": "healthy",

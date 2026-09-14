@@ -48,6 +48,27 @@ interface IOCTableProps {
   iocs: IOC[];
 }
 
+import { Link } from 'react-router-dom';
+import { Globe, Network, ShieldAlert, ExternalLink, MapPin } from 'lucide-react';
+
+function isIpIndicator(iocType?: string, value?: string): boolean {
+  if (value && typeof value === 'string') {
+    const val = value.trim();
+    const ipv4Regex = /^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$/;
+    const ipv6Regex = /^([0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}$|^::$|^::1$|^([0-9a-fA-F]{1,4}:){1,7}:$|^:((:[0-9a-fA-F]{1,4}){1,7}|:)$|^[0-9a-fA-F]{1,4}:((:[0-9a-fA-F]{1,4}){1,6})$/;
+    if (ipv4Regex.test(val) || ipv6Regex.test(val)) {
+      return true;
+    }
+  }
+  if (iocType && typeof iocType === 'string') {
+    const t = iocType.toUpperCase();
+    if (['IP', 'IP_ADDRESS', 'IPADDRESS', 'IPV4', 'IPV6'].includes(t)) {
+      return true;
+    }
+  }
+  return false;
+}
+
 export function IOCTable({ iocs }: IOCTableProps) {
   if (!iocs.length) {
     return (
@@ -66,13 +87,14 @@ export function IOCTable({ iocs }: IOCTableProps) {
             <th className="text-left py-2 px-3 text-[hsl(var(--foreground-subtle))] font-medium text-xs uppercase tracking-wider">Indicator</th>
             <th className="text-left py-2 px-3 text-[hsl(var(--foreground-subtle))] font-medium text-xs uppercase tracking-wider">Verdict</th>
             <th className="text-left py-2 px-3 text-[hsl(var(--foreground-subtle))] font-medium text-xs uppercase tracking-wider">Score</th>
+            <th className="text-right py-2 px-3 text-[hsl(var(--foreground-subtle))] font-medium text-xs uppercase tracking-wider">Pivots</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-[hsl(var(--border-subtle))]">
           {iocs.map((ioc) => (
-            <tr key={ioc.id} className="hover:bg-[hsl(var(--surface-2))] transition-colors">
+            <tr key={ioc.id} className="hover:bg-[hsl(var(--surface-2))] transition-colors group">
               <td className="py-2 px-3">
-                <span className="text-xs text-[hsl(var(--foreground-muted))] font-sans">
+                <span className="text-xs text-[hsl(var(--foreground-muted))] font-sans whitespace-nowrap">
                   {getIOCTypeLabel(ioc.ioc_type)}
                 </span>
               </td>
@@ -81,21 +103,44 @@ export function IOCTable({ iocs }: IOCTableProps) {
                   {ioc.value.length > 80 ? `${ioc.value.slice(0, 80)}…` : ioc.value}
                 </span>
               </td>
-              <td className="py-2 px-3">
-                {ioc.is_malicious === true ? (
-                  <span className="severity-critical text-xs px-1.5 py-0.5 rounded">Malicious</span>
-                ) : ioc.is_malicious === false ? (
-                  <span className="severity-low text-xs px-1.5 py-0.5 rounded">Clean</span>
+              <td className="py-2 px-3 whitespace-nowrap">
+                {ioc.is_malicious === true || (ioc.threat_score ?? 0) >= 70 ? (
+                  <span className="severity-critical text-xs px-1.5 py-0.5 rounded font-mono font-bold">Malicious</span>
+                ) : (ioc.threat_score ?? 0) >= 40 ? (
+                  <span className="severity-medium text-xs px-1.5 py-0.5 rounded font-mono font-bold">Suspicious</span>
                 ) : (
-                  <span className="text-[hsl(var(--foreground-subtle))] text-xs">Unknown</span>
+                  <span className="severity-low text-xs px-1.5 py-0.5 rounded font-mono font-bold">Clean</span>
                 )}
               </td>
-              <td className="py-2 px-3">
-                {ioc.threat_score != null ? (
-                  <ThreatScoreBar score={ioc.threat_score} />
-                ) : (
-                  <span className="text-[hsl(var(--foreground-subtle))] text-xs">—</span>
-                )}
+              <td className="py-2 px-3 whitespace-nowrap">
+                <ThreatScoreBar score={ioc.threat_score ?? 0} />
+              </td>
+              <td className="py-2 px-3 text-right whitespace-nowrap">
+                <div className="inline-flex items-center gap-1.5 justify-end">
+                  <Link
+                    to={`/intel?search=${encodeURIComponent(ioc.value)}`}
+                    className="p-1 rounded hover:bg-[hsl(var(--surface-3))] text-[hsl(var(--foreground-subtle))] hover:text-[hsl(var(--accent))] transition-colors"
+                    title="Investigate in Threat Intelligence Repository"
+                  >
+                    <ShieldAlert className="w-3.5 h-3.5" />
+                  </Link>
+                  <Link
+                    to={`/graph?query=${encodeURIComponent(ioc.value)}`}
+                    className="p-1 rounded hover:bg-[hsl(var(--surface-3))] text-[hsl(var(--foreground-subtle))] hover:text-purple-400 transition-colors"
+                    title="Correlate in Campaign Graph"
+                  >
+                    <Network className="w-3.5 h-3.5" />
+                  </Link>
+                  {isIpIndicator(ioc.ioc_type, ioc.value) && (
+                    <Link
+                      to={`/geo?ip=${encodeURIComponent(ioc.value)}`}
+                      className="p-1 rounded hover:bg-[hsl(var(--surface-3))] text-[hsl(var(--foreground-subtle))] hover:text-emerald-400 transition-colors"
+                      title="Geolocate IP Origin on Map"
+                    >
+                      <MapPin className="w-3.5 h-3.5" />
+                    </Link>
+                  )}
+                </div>
               </td>
             </tr>
           ))}

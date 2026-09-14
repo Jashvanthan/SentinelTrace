@@ -4,17 +4,25 @@ SentinelTrace Backend — Auth Service
 Handles:
 - User registration and login
 - Refresh token rotation with family revocation
-- Google OAuth token exchange
+- Google OAuth token exchange — strictly separated login vs registration
 - Audit logging for auth events
+
+Google OAuth security model:
+  - login_google_user()         → only logs in EXISTING linked identities
+  - create_google_pending_token() → issues short-lived pending token for unknown identities
+  - validate_google_pending_token() → verifies + single-use nonce consumption
+  - register_google_user()      → creates user ONLY after validated pending token
 """
 from __future__ import annotations
 
-import uuid
 import secrets
+import uuid
 from datetime import UTC, datetime, timedelta
 
 from fastapi import HTTPException, Request, Response, status
+from jose import JWTError, jwt
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
@@ -30,15 +38,20 @@ from app.core.security import (
     set_refresh_token_cookie,
     create_access_token,
 )
-from app.models.audit_log import AuditLog
+from app.models.audit_log import AuditLog  # noqa: F401
 from app.models.refresh_session import RefreshSession
 from app.services.audit_service import write_audit_log
 from app.models.user import AuthProvider, User, UserRole
 from app.models.oauth import ExternalIdentity, OAuthState
+from app.models.google_pending import GooglePendingNonce
+from app.models.workspace import Workspace, WorkspaceMember
 from app.schemas.auth import LoginRequest, TokenResponse, UserRegisterRequest, UserResponse
 
 settings = get_settings()
 logger = get_logger("sentineltrace.auth")
+
+# Pending token TTL (seconds)
+_PENDING_TOKEN_TTL = 5 * 60  # 5 minutes
 
 
 # ── Registration ──────────────────────────────────────────────────────────────
@@ -49,37 +62,77 @@ async def register_user(
     request: Request,
 ) -> User:
     """Register a new local user. Raises 409 if email already exists."""
-    existing = await db.scalar(select(User).where(User.email == payload.email.lower()))
+
+    normalized_email = payload.email.strip().lower()
+    existing = await db.scalar(select(User).where(User.email == normalized_email))
     if existing:
-        # Prevent account enumeration by returning a generic 201 with the submitted info
-        # The attacker thinks registration succeeded, but the real account is untouched.
-        # When they try to login with this password, it will fail.
-        await write_audit_log(db, action="REGISTER_FAILED_DUPLICATE", user_id=None, request=request, details={"email": payload.email})
-        return User(
-            id=uuid.uuid4(),
-            email=payload.email.lower(),
-            full_name=payload.full_name,
-            role=UserRole.ANALYST,
-            auth_provider=AuthProvider.LOCAL,
-            is_active=True,
-            is_verified=False,
-            created_at=datetime.now(UTC),
-            updated_at=datetime.now(UTC),
+        await write_audit_log(
+            db,
+            action="REGISTER_FAILED_DUPLICATE",
+            user_id=None,
+            request=request,
+            details={"email": normalized_email},
+            outcome="FAILURE",
+        )
+        await db.commit()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="An account with this email address already exists",
         )
 
-    user = User(
-        email=payload.email.lower(),
-        full_name=payload.full_name,
-        password_hash=hash_password(payload.password),
-        role=UserRole.ANALYST,
-        auth_provider=AuthProvider.LOCAL,
-    )
-    db.add(user)
-    await db.flush()
+    try:
+        user = User(
+            email=normalized_email,
+            full_name=payload.full_name.strip() if payload.full_name else normalized_email,
+            password_hash=hash_password(payload.password),
+            role=UserRole.ANALYST,
+            auth_provider=AuthProvider.LOCAL,
+        )
+        db.add(user)
+        await db.flush()
 
-    await write_audit_log(db, action="USER_REGISTERED", user_id=user.id, request=request)
-    logger.info("user_registered", user_id=str(user.id), email=user.email)
-    return user
+        # Automatically create default primary workspace for the user
+        ws_slug = f"workspace-{str(uuid.uuid4())[:8]}"
+        default_ws = Workspace(
+            name="Primary SOC Workspace",
+            slug=ws_slug,
+            owner_id=user.id,
+        )
+        db.add(default_ws)
+        await db.flush()
+
+        member = WorkspaceMember(
+            workspace_id=default_ws.id,
+            user_id=user.id,
+            role="owner",
+        )
+        db.add(member)
+        await db.flush()
+
+        await write_audit_log(
+            db,
+            action="USER_REGISTERED",
+            user_id=user.id,
+            request=request,
+            outcome="SUCCESS",
+        )
+        await db.commit()
+        await db.refresh(user)
+        logger.info("user_registered", user_id=str(user.id), email=user.email)
+        return user
+    except IntegrityError:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="An account with this email address already exists",
+        )
+    except Exception as e:
+        await db.rollback()
+        logger.error("user_registration_failed", error=str(e))
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to complete registration",
+        )
 
 
 # ── Login ─────────────────────────────────────────────────────────────────────
@@ -223,7 +276,7 @@ async def logout_all_user(
     logger.info("user_logout_all", user_id=str(user_id))
 
 
-# ── Google OAuth ──────────────────────────────────────────────────────────────
+# ── Google OAuth State ────────────────────────────────────────────────────────
 
 async def create_oauth_state(db: AsyncSession, state_nonce: str, browser_nonce: str) -> None:
     """Store the OAuth state and its binding browser nonce. Expires in 10 minutes."""
@@ -258,16 +311,31 @@ async def validate_and_consume_oauth_state(db: AsyncSession, state_nonce: str, b
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "OAuth browser context mismatch. Possible CSRF.")
 
 
-async def upsert_google_user(
+# ── Google OAuth — Login (EXISTING accounts only) ─────────────────────────────
+
+async def login_google_user(
     db: AsyncSession,
     id_info: dict,
     request: Request,
     response: Response,
-) -> TokenResponse:
+    intent: str = "login",
+) -> TokenResponse | None:
     """
-    Create or link a Google identity based on ID token claims.
-    Enforces account collision policy (blocks merging into LOCAL accounts).
-    Sets the refresh token cookie.
+    Attempt to log in a Google-identified user.
+
+    Returns TokenResponse if:
+    - ExternalIdentity(google_sub) already exists → login
+
+    Returns None if:
+    - No ExternalIdentity exists (caller should issue pending token)
+
+    Raises HTTPException if:
+    - Email belongs to a LOCAL account (cannot auto-link)
+    - Account is disabled
+    - Google claims are invalid
+
+    NEVER creates a new user or workspace.
+    NEVER issues tokens for unknown Google identities.
     """
     google_sub = id_info.get("sub")
     email = id_info.get("email", "").lower()
@@ -279,7 +347,7 @@ async def upsert_google_user(
     if not email_verified:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Google email is not verified")
 
-    # Check if ExternalIdentity already exists
+    # Step 1: Check for existing ExternalIdentity (the correct, stable link)
     ext_id = await db.scalar(
         select(ExternalIdentity).where(
             ExternalIdentity.provider == "google",
@@ -288,63 +356,380 @@ async def upsert_google_user(
     )
 
     if ext_id:
-        # Existing linked account
+        # ── CASE A: Existing Google-linked account → LOGIN ──
         user = await db.get(User, ext_id.user_id)
         if not user or not user.is_active:
+            await write_audit_log(db, action="GOOGLE_LOGIN_FAILED_DISABLED", user_id=ext_id.user_id, request=request, outcome="FAILURE")
             raise HTTPException(status.HTTP_401_UNAUTHORIZED, "User account is disabled")
         
         user.avatar_url = id_info.get("picture", user.avatar_url)
-        await write_audit_log(db, action="GOOGLE_LOGIN", user_id=user.id, request=request)
-    else:
-        # New Google Identity. Check for email collision.
-        existing_user = await db.scalar(select(User).where(User.email == email))
+        user.last_login_at = datetime.now(UTC)
         
-        if existing_user:
-            if existing_user.auth_provider == AuthProvider.LOCAL:
-                # MANDATORY CORRECTION: DO NOT automatically merge accounts.
-                await write_audit_log(db, action="GOOGLE_ACCOUNT_COLLISION", user_id=existing_user.id, request=request)
-                raise HTTPException(
-                    status.HTTP_409_CONFLICT, 
-                    "Email already registered using password login. Please login with password."
-                )
-            # If it's already GOOGLE provider but missing ExternalIdentity (e.g. migration edge case)
-            user = existing_user
-        else:
-            # Create brand new user
-            user = User(
-                email=email,
-                full_name=id_info.get("name", email),
-                avatar_url=id_info.get("picture"),
-                auth_provider=AuthProvider.GOOGLE,
-                is_verified=True,
-                role=UserRole.ANALYST,
-            )
-            db.add(user)
-            await db.flush()
-            await write_audit_log(db, action="GOOGLE_USER_CREATED", user_id=user.id, request=request)
+        access_token = create_access_token(str(user.id), user.email, user.role.value)
+        raw_refresh, _ = await _issue_refresh_token(db, user, request)
+        set_refresh_token_cookie(response, raw_refresh)
+        
+        await write_audit_log(db, action="GOOGLE_LOGIN_SUCCESS", user_id=user.id, request=request)
+        logger.info("google_login_success", user_id=str(user.id))
+        return TokenResponse(
+            access_token=access_token,
+            expires_in=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+            user=UserResponse.model_validate(user),
+        )
 
-        # Create External Identity link
+    # Step 2: No ExternalIdentity. Check email collision with LOCAL accounts.
+    existing_user = await db.scalar(select(User).where(User.email == email))
+    if existing_user:
+        if existing_user.auth_provider == AuthProvider.LOCAL:
+            # ── CASE B: Email exists as LOCAL account → block, do NOT merge ──
+            await write_audit_log(
+                db, action="GOOGLE_ACCOUNT_COLLISION",
+                user_id=existing_user.id,
+                request=request,
+                details={"email": email, "intent": intent},
+                outcome="FAILURE",
+            )
+            raise HTTPException(
+                status.HTTP_409_CONFLICT,
+                "An account with this email already exists. Please sign in using your existing account."
+            )
+        # GOOGLE provider but no ExternalIdentity record (migration edge case)
+        # Re-link the ExternalIdentity and login
+        logger.warning("google_identity_missing_relink", email=email)
         new_ext_id = ExternalIdentity(
-            user_id=user.id,
+            user_id=existing_user.id,
             provider="google",
             provider_subject=google_sub,
             email=email,
         )
         db.add(new_ext_id)
-        await db.flush()
-        await write_audit_log(db, action="GOOGLE_ACCOUNT_LINKED", user_id=user.id, request=request)
+        existing_user.last_login_at = datetime.now(UTC)
+        access_token = create_access_token(str(existing_user.id), existing_user.email, existing_user.role.value)
+        raw_refresh, _ = await _issue_refresh_token(db, existing_user, request)
+        set_refresh_token_cookie(response, raw_refresh)
+        await write_audit_log(db, action="GOOGLE_LOGIN_SUCCESS", user_id=existing_user.id, request=request)
+        return TokenResponse(
+            access_token=access_token,
+            expires_in=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+            user=UserResponse.model_validate(existing_user),
+        )
 
-    # Issue tokens
-    access_token = create_access_token(str(user.id), user.email, user.role.value)
-    raw_refresh, _ = await _issue_refresh_token(db, user, request)
-    set_refresh_token_cookie(response, raw_refresh)
-    user.last_login_at = datetime.now(UTC)
-
-    return TokenResponse(
-        access_token=access_token,
-        expires_in=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
-        user=UserResponse.model_validate(user),
+    # ── CASE C: Brand new Google identity — caller must issue pending token ──
+    await write_audit_log(
+        db, action="GOOGLE_LOGIN_UNKNOWN_ACCOUNT",
+        user_id=None,
+        request=request,
+        details={"email": email, "intent": intent},
+        outcome="PENDING",
     )
+    return None  # Caller issues pending token and redirects to registration
+
+
+# ── Google Pending Token (bridge between OAuth verify and registration) ────────
+
+async def create_google_pending_token(
+    db: AsyncSession,
+    id_info: dict,
+) -> tuple[str, str]:
+    """
+    Create a short-lived signed pending token + persist a single-use nonce.
+
+    Returns (signed_jwt, nonce)
+    The JWT contains type='google_pending' so it is REJECTED by access token validators.
+    The nonce is persisted in the DB — it must be consumed before registration proceeds.
+    TTL: 5 minutes.
+    """
+    google_sub = id_info.get("sub")
+    email = id_info.get("email", "").lower()
+    full_name = id_info.get("name", email)
+    picture = id_info.get("picture")
+
+    nonce = secrets.token_urlsafe(32)
+    expires_at = datetime.now(UTC) + timedelta(seconds=_PENDING_TOKEN_TTL)
+
+    # Persist nonce for single-use enforcement
+    pending_nonce = GooglePendingNonce(
+        nonce=nonce,
+        google_sub=google_sub,
+        email=email,
+        full_name=full_name,
+        picture=picture,
+        expires_at=expires_at,
+        consumed=False,
+    )
+    db.add(pending_nonce)
+    await db.flush()
+
+    # Sign the pending token — type=google_pending ensures it cannot access protected endpoints
+    payload = {
+        "token_type": "google_pending",  # CRITICAL: explicitly NOT "access"
+        "sub": google_sub,
+        "email": email,
+        "name": full_name,
+        "picture": picture,
+        "nonce": nonce,
+        "iat": datetime.now(UTC).timestamp(),
+        "exp": expires_at.timestamp(),
+    }
+    pending_jwt = jwt.encode(payload, settings.JWT_SECRET, algorithm=settings.JWT_ALGORITHM)
+    
+    logger.info("google_pending_token_created", email=email)
+    return pending_jwt, nonce
+
+
+async def validate_google_pending_token(
+    db: AsyncSession,
+    pending_token: str,
+    request: Request,
+) -> dict:
+    """
+    Validate a Google pending registration token.
+
+    Steps:
+    1. Verify JWT signature and expiration
+    2. Verify token_type == 'google_pending'
+    3. Extract nonce
+    4. Look up nonce in DB
+    5. Verify nonce not expired
+    6. Atomically mark nonce as consumed (prevents replay)
+    7. Verify google_sub matches
+
+    Returns the validated id_info dict: {google_sub, email, full_name, picture}
+    Raises HTTPException on any failure.
+    """
+    # Step 1 & 2: Verify signature, expiry, and type
+    try:
+        payload = jwt.decode(
+            pending_token,
+            settings.JWT_SECRET,
+            algorithms=[settings.JWT_ALGORITHM],
+        )
+    except JWTError as e:
+        await write_audit_log(
+            db, action="GOOGLE_PENDING_TOKEN_REJECTED",
+            user_id=None, request=request,
+            details={"reason": "jwt_invalid"},
+            outcome="FAILURE",
+        )
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid or expired registration token")
+
+    if payload.get("token_type") != "google_pending":
+        await write_audit_log(
+            db, action="GOOGLE_PENDING_TOKEN_REJECTED",
+            user_id=None, request=request,
+            details={"reason": "wrong_token_type", "got": payload.get("token_type")},
+            outcome="FAILURE",
+        )
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid registration token type")
+
+    google_sub = payload.get("sub")
+    email = payload.get("email", "").lower()
+    nonce = payload.get("nonce")
+
+    if not google_sub or not email or not nonce:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Malformed registration token")
+
+    # Step 3-7: Find, validate, and atomically consume nonce
+    pending_nonce = await db.scalar(
+        select(GooglePendingNonce).where(GooglePendingNonce.nonce == nonce)
+    )
+
+    if not pending_nonce:
+        await write_audit_log(
+            db, action="GOOGLE_PENDING_TOKEN_REJECTED",
+            user_id=None, request=request,
+            details={"reason": "nonce_not_found"},
+            outcome="FAILURE",
+        )
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Registration session not found or already used")
+
+    if pending_nonce.consumed:
+        await write_audit_log(
+            db, action="GOOGLE_PENDING_TOKEN_REJECTED",
+            user_id=None, request=request,
+            details={"reason": "nonce_consumed"},
+            outcome="FAILURE",
+        )
+        raise HTTPException(status.HTTP_409_CONFLICT, "This Google registration link has already been used")
+
+    if pending_nonce.expires_at < datetime.now(UTC):
+        await write_audit_log(
+            db, action="GOOGLE_PENDING_TOKEN_EXPIRED",
+            user_id=None, request=request,
+            details={"email": email},
+            outcome="FAILURE",
+        )
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Your Google registration session has expired. Please try again.")
+
+    if not secrets.compare_digest(pending_nonce.google_sub, google_sub):
+        await write_audit_log(
+            db, action="GOOGLE_PENDING_TOKEN_REJECTED",
+            user_id=None, request=request,
+            details={"reason": "sub_mismatch"},
+            outcome="FAILURE",
+        )
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Registration token identity mismatch")
+
+    # Atomically consume the nonce — any concurrent call will now fail
+    pending_nonce.consumed = True
+    await db.flush()
+
+    return {
+        "sub": google_sub,
+        "email": email,
+        "name": pending_nonce.full_name,
+        "picture": pending_nonce.picture,
+    }
+
+
+# ── Google Registration (NEW accounts only) ───────────────────────────────────
+
+async def register_google_user(
+    db: AsyncSession,
+    pending_token: str,
+    request: Request,
+    response: Response,
+) -> TokenResponse:
+    """
+    Complete Google registration after pending token validation.
+
+    Full transactional flow:
+    1. Validate pending token + consume nonce (single-use)
+    2. Re-check ExternalIdentity doesn't already exist (concurrent safety)
+    3. Re-check email doesn't already exist (concurrent safety)
+    4. Create User (Google provider, no password)
+    5. Create ExternalIdentity
+    6. Create default Workspace
+    7. Create WorkspaceMember (owner)
+    8. Audit: GOOGLE_REGISTRATION_SUCCESS
+    9. Commit
+    10. Issue real JWT + refresh cookie
+
+    On any failure: full ROLLBACK — no partial account left.
+    """
+    try:
+        # Step 1: Validate + consume nonce
+        id_info = await validate_google_pending_token(db, pending_token, request)
+        
+        google_sub = id_info["sub"]
+        email = id_info["email"]
+        full_name = id_info["name"]
+        picture = id_info.get("picture")
+
+        # Step 2: Double-check ExternalIdentity (concurrent registration guard)
+        existing_ext = await db.scalar(
+            select(ExternalIdentity).where(
+                ExternalIdentity.provider == "google",
+                ExternalIdentity.provider_subject == google_sub,
+            )
+        )
+        if existing_ext:
+            # Google identity already registered — login instead
+            user = await db.get(User, existing_ext.user_id)
+            if user and user.is_active:
+                await write_audit_log(db, action="GOOGLE_REGISTRATION_DUPLICATE", user_id=user.id, request=request, outcome="DUPLICATE")
+                raise HTTPException(
+                    status.HTTP_409_CONFLICT,
+                    "This Google account is already registered with SentinelTrace. Please sign in."
+                )
+            raise HTTPException(status.HTTP_409_CONFLICT, "This Google account is already registered.")
+
+        # Step 3: Double-check email (concurrent registration guard)
+        existing_email_user = await db.scalar(select(User).where(User.email == email))
+        if existing_email_user:
+            await write_audit_log(
+                db, action="GOOGLE_REGISTRATION_DUPLICATE",
+                user_id=existing_email_user.id, request=request,
+                details={"reason": "email_exists"},
+                outcome="DUPLICATE",
+            )
+            raise HTTPException(
+                status.HTTP_409_CONFLICT,
+                "An account with this email already exists. Please sign in."
+            )
+
+        # Step 4: Create User (Google provider, no password_hash)
+        user = User(
+            email=email,
+            full_name=full_name,
+            avatar_url=picture,
+            auth_provider=AuthProvider.GOOGLE,
+            is_verified=True,
+            role=UserRole.ANALYST,
+            password_hash=None,  # Google accounts have no password
+        )
+        db.add(user)
+        await db.flush()
+
+        # Step 5: Create ExternalIdentity
+        ext_id = ExternalIdentity(
+            user_id=user.id,
+            provider="google",
+            provider_subject=google_sub,
+            email=email,
+        )
+        db.add(ext_id)
+        await db.flush()
+
+        # Step 6: Create default Workspace
+        ws_slug = f"workspace-{str(uuid.uuid4())[:8]}"
+        default_ws = Workspace(
+            name="Primary SOC Workspace",
+            slug=ws_slug,
+            owner_id=user.id,
+        )
+        db.add(default_ws)
+        await db.flush()
+
+        # Step 7: Create WorkspaceMember
+        member = WorkspaceMember(
+            workspace_id=default_ws.id,
+            user_id=user.id,
+            role="owner",
+        )
+        db.add(member)
+        await db.flush()
+
+        # Step 8: Audit
+        await write_audit_log(
+            db, action="GOOGLE_REGISTRATION_SUCCESS",
+            user_id=user.id, request=request,
+            outcome="SUCCESS",
+        )
+
+        # Step 9: Commit everything atomically
+        await db.commit()
+        await db.refresh(user)
+
+        # Step 10: Issue real JWT + refresh cookie
+        access_token = create_access_token(str(user.id), user.email, user.role.value)
+        raw_refresh, _ = await _issue_refresh_token(db, user, request)
+        set_refresh_token_cookie(response, raw_refresh)
+        user.last_login_at = datetime.now(UTC)
+
+        logger.info("google_user_registered", user_id=str(user.id), email=user.email)
+        return TokenResponse(
+            access_token=access_token,
+            expires_in=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+            user=UserResponse.model_validate(user),
+        )
+
+    except HTTPException:
+        await db.rollback()
+        raise
+    except IntegrityError:
+        await db.rollback()
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            "An account with this email or Google identity already exists."
+        )
+    except Exception as e:
+        await db.rollback()
+        logger.error("google_registration_failed", error=str(e))
+        raise HTTPException(
+            status.HTTP_500_INTERNAL_SERVER_ERROR,
+            "Google registration could not be completed. Please try again."
+        )
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -383,5 +768,3 @@ async def _revoke_token_family(db: AsyncSession, family_id: uuid.UUID) -> None:
 def _hash_token(raw: str) -> str:
     import hashlib
     return hashlib.sha256(raw.encode()).hexdigest()
-
-
