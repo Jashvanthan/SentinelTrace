@@ -180,6 +180,7 @@ async def get_events_ticket(current_user: CurrentUser):
 @router.get("/google", response_model=GoogleOAuthURLResponse)
 async def google_oauth_start(
     db: DbSession,
+    request: Request,
     response: Response,
     intent: str = Query(default="login", description="OAuth intent: 'login' or 'register'"),
 ):
@@ -205,10 +206,18 @@ async def google_oauth_start(
 
     from authlib.integrations.httpx_client import AsyncOAuth2Client
 
+    # Extract initiating origin (e.g. https://sentinel-trace-two.vercel.app)
+    req_origin = request.headers.get("origin") or ""
+    if not req_origin and request.headers.get("referer"):
+        from urllib.parse import urlparse
+        parsed = urlparse(request.headers.get("referer"))
+        if parsed.scheme and parsed.netloc:
+            req_origin = f"{parsed.scheme}://{parsed.netloc}"
+
     state_nonce = secrets.token_urlsafe(32)
-    stored_nonce_payload = f"{intent}:{secrets.token_urlsafe(32)}"
+    stored_nonce_payload = f"{intent}|{req_origin}|{secrets.token_urlsafe(16)}"
     
-    # Store state in DB (bound to browser nonce and intent)
+    # Store state in DB (bound to browser nonce, intent, and originating frontend)
     await create_oauth_state(db, state_nonce, stored_nonce_payload)
     await db.commit()
 
@@ -278,9 +287,14 @@ async def google_oauth_callback(
             status_code=status.HTTP_302_FOUND,
         )
 
-    # Determine intent from stored state record (failsafe against dropped cross-site cookies)
+    # Determine intent and originating frontend from stored state record
     intent = "login"
-    if ":" in state_record.browser_nonce:
+    if "|" in state_record.browser_nonce:
+        parts = state_record.browser_nonce.split("|")
+        intent = parts[0]
+        if len(parts) > 1 and parts[1].startswith("http"):
+            frontend_url = parts[1].rstrip("/")
+    elif ":" in state_record.browser_nonce:
         intent = state_record.browser_nonce.split(":", 1)[0]
     elif request.cookies.get("st_oauth_intent") in _VALID_INTENTS:
         intent = request.cookies.get("st_oauth_intent")
