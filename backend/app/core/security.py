@@ -132,9 +132,9 @@ def set_refresh_token_cookie(response: Response, token: str) -> None:
         value=token,
         max_age=max_age,
         path=REFRESH_TOKEN_COOKIE_PATH,
-        secure=settings.is_production,   # Secure flag only in production (requires HTTPS)
+        secure=settings.is_production,   # Secure flag in production (requires HTTPS)
         httponly=True,
-        samesite="lax",
+        samesite="none" if settings.is_production else "lax",
     )
 
 

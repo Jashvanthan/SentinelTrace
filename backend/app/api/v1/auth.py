@@ -206,10 +206,11 @@ async def google_oauth_start(
     from authlib.integrations.httpx_client import AsyncOAuth2Client
 
     state_nonce = secrets.token_urlsafe(32)
-    browser_nonce = secrets.token_urlsafe(32)
+    stored_nonce_payload = f"{intent}:{secrets.token_urlsafe(32)}"
     
-    # Store state in DB (bound to browser nonce)
-    await create_oauth_state(db, state_nonce, browser_nonce)
+    # Store state in DB (bound to browser nonce and intent)
+    await create_oauth_state(db, state_nonce, stored_nonce_payload)
+    await db.commit()
 
     client = AsyncOAuth2Client(
         client_id=settings.GOOGLE_CLIENT_ID,
@@ -224,12 +225,13 @@ async def google_oauth_start(
     )
     
     # Encode intent into state cookie (safe — state is also in DB)
+    is_prod = settings.is_production
     response.set_cookie(
         key="st_oauth_nonce",
-        value=browser_nonce,
+        value=stored_nonce_payload,
         httponly=True,
-        secure=settings.APP_ENV == "production",
-        samesite="lax",
+        secure=is_prod,
+        samesite="none" if is_prod else "lax",
         max_age=600,  # 10 minutes
         path="/",
     )
@@ -237,8 +239,8 @@ async def google_oauth_start(
         key="st_oauth_intent",
         value=intent,
         httponly=True,
-        secure=settings.APP_ENV == "production",
-        samesite="lax",
+        secure=is_prod,
+        samesite="none" if is_prod else "lax",
         max_age=600,
         path="/",
     )
@@ -258,7 +260,7 @@ async def google_oauth_callback(
     Handle Google OAuth 2.0 callback.
 
     STRICT SEPARATION:
-    - If ExternalIdentity exists → login → redirect /login?google_auth=success
+    - If ExternalIdentity exists → login → redirect /login?google_auth=success&token=<jwt>
     - If account is LOCAL → collision → redirect /login?error=account_exists
     - If unknown identity + intent=login → redirect /login?error=google_not_registered
     - If unknown identity + intent=register → issue pending token → redirect /login?google_pending=<token>
@@ -268,34 +270,38 @@ async def google_oauth_callback(
 
     frontend_url = settings.FRONTEND_URL or "http://localhost:5173"
 
-    # 1. Validate State Binding
-    browser_nonce = request.cookies.get("st_oauth_nonce")
-    intent = request.cookies.get("st_oauth_intent", "login")  # Default to login for safety
-
-    if not browser_nonce:
-        return RedirectResponse(
-            url=f"{frontend_url}/login?error=google_auth_failed&reason=cookie_missing",
-            status_code=status.HTTP_302_FOUND,
-        )
-
-    # Validate intent from cookie (not URL params — URL params can be tampered)
-    if intent not in _VALID_INTENTS:
-        intent = "login"  # Safe default
-
-    # 2. Consume State from DB (single-use)
-    try:
-        await validate_and_consume_oauth_state(db, state, browser_nonce)
-    except HTTPException:
-        response.delete_cookie("st_oauth_nonce", path="/", samesite="lax")
-        response.delete_cookie("st_oauth_intent", path="/", samesite="lax")
+    # Validate state from DB
+    state_record = await db.get(OAuthState, state)
+    if not state_record:
         return RedirectResponse(
             url=f"{frontend_url}/login?error=google_auth_failed&reason=state_invalid",
             status_code=status.HTTP_302_FOUND,
         )
 
+    # Determine intent from stored state record (failsafe against dropped cross-site cookies)
+    intent = "login"
+    if ":" in state_record.browser_nonce:
+        intent = state_record.browser_nonce.split(":", 1)[0]
+    elif request.cookies.get("st_oauth_intent") in _VALID_INTENTS:
+        intent = request.cookies.get("st_oauth_intent")
+
+    # Consume state to guarantee single-use
+    await db.delete(state_record)
+    await db.commit()
+
+    if state_record.expires_at < datetime.now(UTC):
+        return RedirectResponse(
+            url=f"{frontend_url}/login?error=google_auth_failed&reason=state_expired",
+            status_code=status.HTTP_302_FOUND,
+        )
+
     # Clear cookies
-    response.delete_cookie("st_oauth_nonce", path="/", samesite="lax")
-    response.delete_cookie("st_oauth_intent", path="/", samesite="lax")
+    is_prod = settings.is_production
+    response.delete_cookie("st_oauth_nonce", path="/", samesite="none" if is_prod else "lax")
+    response.delete_cookie("st_oauth_intent", path="/", samesite="none" if is_prod else "lax")
+
+    if intent not in _VALID_INTENTS:
+        intent = "login"
 
     try:
         from authlib.integrations.httpx_client import AsyncOAuth2Client
@@ -328,24 +334,18 @@ async def google_oauth_callback(
         if id_info["iss"] not in ["accounts.google.com", "https://accounts.google.com"]:
             raise ValueError("Wrong issuer.")
 
-        # Raw OAuth tokens are discarded immediately after verification
-        # id_info now contains: sub, email, email_verified, name, picture
-
         # 5. Attempt login for existing identity
-        redirect_response = RedirectResponse(
-            url=f"{frontend_url}/login?google_auth=success",
-            status_code=status.HTTP_302_FOUND,
-        )
-
         token_result = await login_google_user(
-            db, id_info, request, redirect_response, intent=intent
+            db, id_info, request, response, intent=intent
         )
 
         if token_result is not None:
             # ── CASE A: Existing Google identity → LOGIN ──
-            # login_google_user already set the refresh cookie on redirect_response
             await db.commit()
-            return redirect_response
+            return RedirectResponse(
+                url=f"{frontend_url}/login?google_auth=success&token={token_result.access_token}",
+                status_code=status.HTTP_302_FOUND,
+            )
 
         # ── CASE C: Unknown Google identity ──
         email = id_info.get("email", "")

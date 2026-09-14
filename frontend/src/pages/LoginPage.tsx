@@ -47,7 +47,27 @@ export function LoginPage() {
 
     // ── Case 1: Existing Google user → login success ──
     if (params.has('google_auth') && params.get('google_auth') === 'success') {
-      apiClient.post('/auth/refresh')
+      const directToken = params.get('token');
+      if (directToken) {
+        setAccessToken(directToken);
+        apiClient
+          .get('/auth/me', {
+            headers: { Authorization: `Bearer ${directToken}` },
+          })
+          .then((res) => {
+            setAuth(res.data, directToken);
+            setAccessToken(directToken);
+            navigate(from, { replace: true });
+          })
+          .catch(() => {
+            setFormError('Google sign-in succeeded, but profile could not be loaded. Please try again.');
+            navigate('/login', { replace: true });
+          });
+        return;
+      }
+
+      apiClient
+        .post('/auth/refresh')
         .then((res) => {
           setAuth(res.data.user, res.data.access_token);
           setAccessToken(res.data.access_token);
@@ -189,14 +209,10 @@ export function LoginPage() {
     try {
       setIsGoogleLoading(true);
       setFormError(null);
-      const rawApiUrl = (import.meta as any).env?.VITE_API_BASE_URL || (import.meta as any).env?.VITE_API_URL || 'http://localhost:8000/api/v1';
-      const apiUrl = rawApiUrl.replace(/\/+$/, '');
       const intent = mode === 'register' ? 'register' : 'login';
-      const response = await fetch(`${apiUrl}/auth/google?intent=${intent}`, {
-        credentials: 'include',
-      });
-      if (!response.ok) throw new Error('Failed to initialize Google OAuth');
-      const data = await response.json();
+      const { data } = await apiClient.get<{ authorization_url: string; state: string }>(
+        `/auth/google?intent=${intent}`
+      );
       window.location.href = data.authorization_url;
     } catch (err: any) {
       setIsGoogleLoading(false);
@@ -215,28 +231,10 @@ export function LoginPage() {
     try {
       setIsCompletingGoogleReg(true);
       setFormError(null);
-      const rawApiUrl = (import.meta as any).env?.VITE_API_BASE_URL || (import.meta as any).env?.VITE_API_URL || 'http://localhost:8000/api/v1';
-      const apiUrl = rawApiUrl.replace(/\/+$/, '');
-      const res = await fetch(`${apiUrl}/auth/google/complete-registration`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ pending_token: googlePending.pendingToken }),
+      const { data } = await apiClient.post<any>('/auth/google/complete-registration', {
+        pending_token: googlePending.pendingToken,
       });
-      const data = await res.json();
-      if (!res.ok) {
-        const detail = extractErrorMessage(data, 'Google registration could not be completed.');
-        if (res.status === 401 && detail.toLowerCase().includes('expired')) {
-          setFormError('Your Google registration session has expired. Please try again.');
-        } else if (res.status === 409) {
-          setFormError('This Google account is already registered. Please sign in instead.');
-          setMode('login');
-        } else {
-          setFormError(detail);
-        }
-        setGooglePending(null);
-        return;
-      }
+
       // Success — set auth and navigate
       setAuth(data.user, data.access_token);
       setAccessToken(data.access_token);
@@ -260,7 +258,16 @@ export function LoginPage() {
       notify({ type: 'success', title: 'Account Created', description: `Welcome to SentinelTrace, ${data.user.full_name || data.user.email}!` });
       navigate(from, { replace: true });
     } catch (err: any) {
-      setFormError(extractErrorMessage(err, 'Google registration could not be completed. Please try again.'));
+      const detail = extractErrorMessage(err, 'Google registration could not be completed.');
+      if (detail.toLowerCase().includes('expired')) {
+        setFormError('Your Google registration session has expired. Please try again.');
+      } else if (detail.toLowerCase().includes('already registered')) {
+        setFormError('This Google account is already registered. Please sign in instead.');
+        setMode('login');
+      } else {
+        setFormError(detail);
+      }
+      setGooglePending(null);
     } finally {
       setIsCompletingGoogleReg(false);
     }

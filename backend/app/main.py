@@ -140,7 +140,7 @@ def create_app() -> FastAPI:
     if settings.is_production:
         app.add_middleware(
             TrustedHostMiddleware,
-            allowed_hosts=["localhost", "127.0.0.1", "your-domain.com", "*.your-domain.com"],
+            allowed_hosts=["*"],
         )
 
     # ── Routers ────────────────────────────────────────────────────────────────
