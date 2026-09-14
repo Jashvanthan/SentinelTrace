@@ -31,6 +31,7 @@ from app.core.config import get_settings
 from app.core.deps import CurrentUser, DbSession
 from app.core.security import REFRESH_TOKEN_COOKIE_NAME
 from app.schemas.auth import (
+    ChangePasswordRequest,
     GoogleOAuthURLResponse,
     GoogleRegistrationRequest,
     LoginRequest,
@@ -41,6 +42,7 @@ from app.schemas.auth import (
 )
 from app.services.auth_service import (
     authenticate_user,
+    change_user_password,
     logout_user,
     logout_all_user,
     register_user,
@@ -147,6 +149,21 @@ async def update_me(
     await db.commit()
     await db.refresh(current_user)
     return current_user
+
+
+@router.post("/change-password", response_model=TokenResponse)
+async def change_password(
+    payload: ChangePasswordRequest,
+    db: DbSession,
+    current_user: CurrentUser,
+    request: Request,
+    response: Response,
+):
+    """
+    Safely update the authenticated user's password.
+    Hashes with Argon2id, invalidates old sessions, and issues fresh tokens.
+    """
+    return await change_user_password(db, current_user, payload, request, response)
 
 
 @router.get("/events-ticket")

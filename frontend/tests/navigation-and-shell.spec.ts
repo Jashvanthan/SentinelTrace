@@ -71,7 +71,7 @@ test.describe('Navigation and AppShell Component Tests', () => {
     // 6. Activity Log
     await sidebar.getByRole('link', { name: 'Activity Log', exact: true }).click();
     await expect(page).toHaveURL(/.*\/activity/);
-    await expect(page.getByRole('heading', { name: 'Activity Log' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: /Security & Activity Log/i })).toBeVisible();
 
     // 7. Admin: Settings
     await sidebar.getByRole('link', { name: 'Settings', exact: true }).click();

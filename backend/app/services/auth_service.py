@@ -28,6 +28,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import get_settings
 from app.core.logging import get_logger
 from app.services.password_service import (
+    DUMMY_ARGON2_HASH,
     hash_password,
     needs_rehash,
     verify_password,
@@ -45,7 +46,13 @@ from app.models.user import AuthProvider, User, UserRole
 from app.models.oauth import ExternalIdentity, OAuthState
 from app.models.google_pending import GooglePendingNonce
 from app.models.workspace import Workspace, WorkspaceMember
-from app.schemas.auth import LoginRequest, TokenResponse, UserRegisterRequest, UserResponse
+from app.schemas.auth import (
+    ChangePasswordRequest,
+    LoginRequest,
+    TokenResponse,
+    UserRegisterRequest,
+    UserResponse,
+)
 
 settings = get_settings()
 logger = get_logger("sentineltrace.auth")
@@ -152,8 +159,7 @@ async def authenticate_user(
     )
 
     # Constant-time comparison to prevent timing attacks
-    dummy_hash = "$argon2id$v=19$m=65536,t=3,p=1$dummydummydummy$dummydummydummydummydummy"
-    if user is None or not verify_password(payload.password, user.password_hash or dummy_hash):
+    if user is None or not verify_password(payload.password, user.password_hash or DUMMY_ARGON2_HASH):
         await write_audit_log(
             db, action="LOGIN_FAILED", user_id=None,
             request=request,
@@ -180,6 +186,72 @@ async def authenticate_user(
     user.last_login_at = datetime.now(UTC)
     await write_audit_log(db, action="LOGIN_SUCCESS", user_id=user.id, request=request)
     logger.info("user_login", user_id=str(user.id))
+
+    return TokenResponse(
+        access_token=access_token,
+        expires_in=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+        user=UserResponse.model_validate(user),
+    )
+
+
+# ── Password Change ───────────────────────────────────────────────────────────
+
+async def change_user_password(
+    db: AsyncSession,
+    user: User,
+    payload: ChangePasswordRequest,
+    request: Request,
+    response: Response,
+) -> TokenResponse:
+    """
+    Safely update user's password:
+    1. Validates current password against Argon2id hash.
+    2. Validates new password length & complexity.
+    3. Hashes new password with Argon2id.
+    4. Revokes all prior refresh sessions to force re-authentication on other devices.
+    5. Issues fresh access and refresh tokens.
+    """
+    if user.auth_provider != AuthProvider.LOCAL:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            f"Cannot change password for an external {user.auth_provider} account.",
+        )
+
+    if not verify_password(payload.current_password, user.password_hash):
+        await write_audit_log(
+            db,
+            action="CHANGE_PASSWORD_FAILED",
+            user_id=user.id,
+            request=request,
+            outcome="FAILURE",
+        )
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Current password is incorrect",
+        )
+
+    # Hash new password with Argon2id
+    user.password_hash = hash_password(payload.new_password)
+    user.updated_at = datetime.now(UTC)
+
+    # Invalidate all existing refresh sessions for this user
+    await logout_all_user(db, user.id, response)
+
+    # Issue fresh tokens for the current session
+    access_token = create_access_token(str(user.id), user.email, user.role.value)
+    raw_refresh, _ = await _issue_refresh_token(db, user, request)
+    set_refresh_token_cookie(response, raw_refresh)
+
+    await write_audit_log(
+        db,
+        action="CHANGE_PASSWORD_SUCCESS",
+        user_id=user.id,
+        request=request,
+        outcome="SUCCESS",
+    )
+    await db.commit()
+    await db.refresh(user)
+    logger.info("password_changed_successfully", user_id=str(user.id))
 
     return TokenResponse(
         access_token=access_token,
