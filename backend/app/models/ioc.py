@@ -4,6 +4,7 @@ SentinelTrace Backend — IOC (Indicator of Compromise) ORM Model
 from __future__ import annotations
 
 import enum
+from typing import TYPE_CHECKING, Any
 import uuid
 
 from sqlalchemy import Boolean, Enum, Float, ForeignKey, Integer, String, Text
@@ -11,6 +12,9 @@ from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
+
+if TYPE_CHECKING:
+    from app.models.email_analysis import EmailAnalysis
 
 
 class IOCType(str, enum.Enum):
@@ -52,13 +56,13 @@ class IOC(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     is_malicious: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     confidence_score: Mapped[float | None] = mapped_column(Float, nullable=True)
     threat_score: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    tags: Mapped[list | None] = mapped_column(JSONB, nullable=True)
-    enrichment_data: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    tags: Mapped[list[str] | None] = mapped_column(JSONB, nullable=True)
+    enrichment_data: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
     first_seen_at: Mapped[str | None] = mapped_column(String(128), nullable=True)
     last_seen_at: Mapped[str | None] = mapped_column(String(128), nullable=True)
     source: Mapped[str | None] = mapped_column(String(128), nullable=True)
 
-    analysis: Mapped["EmailAnalysis"] = relationship(  # noqa: F821
+    analysis: Mapped[EmailAnalysis] = relationship(
         "EmailAnalysis", back_populates="iocs"
     )
 
