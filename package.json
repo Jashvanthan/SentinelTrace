@@ -1,0 +1,16 @@
+{
+  "name": "sentineltrace-root",
+  "version": "1.0.0",
+  "private": true,
+  "workspaces": [
+    "frontend"
+  ],
+  "scripts": {
+    "dev": "npm --prefix frontend run dev",
+    "build": "npm --prefix frontend run build",
+    "lint": "npm --prefix frontend run lint",
+    "test": "npm --prefix frontend run test",
+    "test:ui": "npm --prefix frontend run test:ui",
+    "test:report": "npm --prefix frontend run test:report"
+  }
+}
