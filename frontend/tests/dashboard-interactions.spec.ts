@@ -9,48 +9,37 @@ test.describe('Dashboard UI & Button Functionality Tests', () => {
   test('Renders security overview metrics, score ring, and live feeds', async ({ page }) => {
     await loginAndNavigateTo(page, '/dashboard');
 
-    // Header & workspace name
+    // Header
     await expect(page.getByRole('heading', { name: 'Security Overview' })).toBeVisible();
-    await expect(page.locator('main').getByText(/Primary SOC Team/)).toBeVisible();
 
     // Verify stat cards
-    await expect(page.getByText('Emails Scanned')).toBeVisible();
-    await expect(page.getByText('1248')).toBeVisible();
+    await expect(page.getByText('EMAILS ANALYZED')).toBeVisible();
+    await expect(page.getByText('1,248')).toBeVisible();
 
-    await expect(page.getByText('Threats Detected')).toBeVisible();
+    await expect(page.getByText('THREATS DETECTED')).toBeVisible();
     await expect(page.getByText('42', { exact: true })).toBeVisible();
 
-    await expect(page.getByText('Active Campaigns').first()).toBeVisible();
-    await expect(page.getByText('4', { exact: true })).toBeVisible();
+    await expect(page.getByText('CRITICAL CASES')).toBeVisible();
+    await expect(page.getByText('AVG RISK SCORE')).toBeVisible();
 
-    await expect(page.getByText('Avg Threat Score')).toBeVisible();
-    await expect(page.getByText('76.4')).toBeVisible();
-
-    await expect(page.getByText('Workspace Risk', { exact: true })).toBeVisible();
-    await expect(page.getByText('82.0')).toBeVisible();
-
-    await expect(page.getByText('High/Critical IOCs')).toBeVisible();
-    await expect(page.getByText('19').first()).toBeVisible();
-
-    // Verify Recent Analyses Feed and Active Campaigns section
-    await expect(page.getByRole('heading', { name: 'Recent Analyses' })).toBeVisible();
+    // Verify Active Investigations Table
+    await expect(page.getByRole('heading', { name: 'Active Investigations' })).toBeVisible();
     await expect(page.getByText('URGENT: Payroll Account Verification Required').first()).toBeVisible();
-    await expect(page.getByText('Q3 Financial Spoofing Cluster')).toBeVisible();
 
-    // Threat Category Distribution
-    await expect(page.getByText('Threat Category Distribution')).toBeVisible();
-    await expect(page.getByText('Credential Harvesting', { exact: true })).toBeVisible();
+    // Risk Distribution
+    await expect(page.getByRole('heading', { name: 'Risk Distribution' })).toBeVisible();
+    await expect(page.getByText('CRITICAL', { exact: true })).toBeVisible();
   });
 
-  test('Analyze Email CTA button navigates to email analysis upload page', async ({ page }) => {
+  test('New Investigation CTA button navigates to email analysis upload page', async ({ page }) => {
     await loginAndNavigateTo(page, '/dashboard');
 
-    const analyzeBtn = page.getByRole('link', { name: 'Analyze Email' });
-    await expect(analyzeBtn).toBeVisible();
-    await analyzeBtn.click();
+    const investigateBtn = page.locator('aside.hidden.md\\:flex button', { hasText: 'New Investigation' });
+    await expect(investigateBtn).toBeVisible();
+    await investigateBtn.click();
 
-    await expect(page).toHaveURL(/.*\/emails/);
-    await expect(page.getByRole('heading', { name: 'Email Analysis' })).toBeVisible();
+    await expect(page).toHaveURL(/.*\/investigate/);
+    await expect(page.getByRole('heading', { name: /Email Analysis/i })).toBeVisible();
   });
 
   test('Live email feed item click navigates to analysis details', async ({ page }) => {

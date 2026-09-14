@@ -271,7 +271,7 @@ export async function setupStandardApiMocks(page: Page) {
   // Generic routes registered FIRST
 
   // Generic Email routes
-  await page.route('**/emails/**', async (route) => {
+  await page.route('**/api/**/emails/**', async (route) => {
     if (route.request().method() === 'DELETE') {
       await route.fulfill({ json: { success: true } });
     } else {
@@ -279,20 +279,20 @@ export async function setupStandardApiMocks(page: Page) {
     }
   });
 
-  await page.route('**/emails', async (route) => {
+  await page.route('**/api/**/emails', async (route) => {
     await route.fulfill({ json: mockAnalysesList });
   });
 
   // Specific Email routes registered AFTER generic ones so they take precedence
-  await page.route('**/emails/analysis-002**', async (route) => {
+  await page.route('**/api/**/emails/analysis-002**', async (route) => {
     await route.fulfill({ json: { ...mockAnalysisDetail, id: 'analysis-002', subject: 'Invoice INV-98214 Attached' } });
   });
 
-  await page.route('**/emails/analysis-001**', async (route) => {
+  await page.route('**/api/**/emails/analysis-001**', async (route) => {
     await route.fulfill({ json: mockAnalysisDetail });
   });
 
-  await page.route('**/emails/upload**', async (route) => {
+  await page.route('**/api/**/emails/upload**', async (route) => {
     await route.fulfill({
       json: {
         analysis_id: 'analysis-001',
@@ -302,7 +302,7 @@ export async function setupStandardApiMocks(page: Page) {
   });
 
   // Auth routes
-  await page.route('**/auth/login', async (route) => {
+  await page.route('**/api/**/auth/login', async (route) => {
     await route.fulfill({
       json: {
         access_token: 'valid-mock-jwt-token',
@@ -312,7 +312,7 @@ export async function setupStandardApiMocks(page: Page) {
     });
   });
 
-  await page.route('**/auth/refresh', async (route) => {
+  await page.route('**/api/**/auth/refresh', async (route) => {
     await route.fulfill({
       json: {
         access_token: 'valid-mock-jwt-token',
@@ -322,32 +322,32 @@ export async function setupStandardApiMocks(page: Page) {
     });
   });
 
-  await page.route('**/auth/me', async (route) => {
+  await page.route('**/api/**/auth/me', async (route) => {
     await route.fulfill({ json: mockUser });
   });
 
-  await page.route('**/users/me', async (route) => {
+  await page.route('**/api/**/users/me', async (route) => {
     await route.fulfill({ json: mockUser });
   });
 
-  await page.route('**/auth/logout', async (route) => {
+  await page.route('**/api/**/auth/logout', async (route) => {
     await route.fulfill({ json: { message: 'Logged out successfully' } });
   });
 
-  await page.route('**/health', async (route) => {
+  await page.route('**/api/**/health', async (route) => {
     await route.fulfill({ json: { status: 'healthy' } });
   });
 
   // Workspaces
-  await page.route('**/workspaces', async (route) => {
+  await page.route('**/api/**/workspaces', async (route) => {
     await route.fulfill({ json: mockWorkspacesList });
   });
 
-  await page.route('**/workspaces/**/stats', async (route) => {
+  await page.route('**/api/**/workspaces/**/stats', async (route) => {
     await route.fulfill({ json: mockStats });
   });
 
-  await page.route('**/workspaces/**/members', async (route) => {
+  await page.route('**/api/**/workspaces/**/members', async (route) => {
     if (route.request().method() === 'POST') {
       const postData = route.request().postDataJSON();
       await route.fulfill({
@@ -363,30 +363,30 @@ export async function setupStandardApiMocks(page: Page) {
     }
   });
 
-  await page.route('**/workspaces/**/members/**', async (route) => {
+  await page.route('**/api/**/workspaces/**/members/**', async (route) => {
     if (route.request().method() === 'DELETE') {
       await route.fulfill({ json: { success: true } });
     }
   });
 
-  await page.route('**/workspaces/**/integrations/gmail', async (route) => {
+  await page.route('**/api/**/workspaces/**/integrations/gmail', async (route) => {
     await route.fulfill({ json: mockGmailStatus });
   });
 
-  await page.route('**/workspaces/**/integrations/gmail/sync', async (route) => {
+  await page.route('**/api/**/workspaces/**/integrations/gmail/sync', async (route) => {
     await route.fulfill({ json: { status: 'QUEUED', message: 'Sync queued' } });
   });
 
-  await page.route('**/workspaces/**/integrations/gmail/disconnect', async (route) => {
+  await page.route('**/api/**/workspaces/**/integrations/gmail/disconnect', async (route) => {
     await route.fulfill({ json: { status: 'DISCONNECTED', message: 'Integration disconnected' } });
   });
 
   // Threat Intel
-  await page.route('**/intel/iocs**', async (route) => {
+  await page.route('**/api/**/intel/iocs**', async (route) => {
     await route.fulfill({ json: mockIocsList });
   });
 
-  await page.route('**/intel/enrich', async (route) => {
+  await page.route('**/api/**/intel/enrich', async (route) => {
     await route.fulfill({
       json: {
         indicator: 'update-portal-spoof.com',
@@ -398,39 +398,40 @@ export async function setupStandardApiMocks(page: Page) {
   });
 
   // Graph
-  await page.route('**/graph/campaign**', async (route) => {
+  await page.route('**/api/**/graph/campaign**', async (route) => {
     await route.fulfill({ json: mockGraphData });
   });
 }
 
 export async function loginAndNavigateTo(page: Page, path = '/dashboard') {
   await setupStandardApiMocks(page);
-  await page.goto('/login');
-  await page.getByLabel('Email').fill('analyst@sentineltrace.io');
-  await page.getByLabel(/Password/i).fill('StrongPassword123!');
-  await page.locator('form button[type="submit"]').click();
-
-  // Wait for AppShell
-  await expect(page.getByRole('heading', { name: 'Security Overview' })).toBeVisible();
-
-  if (path === '/emails') {
-    await page.getByRole('link', { name: 'Email Analysis', exact: true }).click();
-    await expect(page.getByRole('heading', { name: 'Email Analysis' })).toBeVisible();
-  } else if (path === '/emails/analysis-001') {
-    await page.getByRole('link', { name: 'Email Analysis', exact: true }).click();
-    await page.locator('table tbody tr').first().click();
-    await expect(page.getByRole('heading', { name: 'URGENT: Payroll Account Verification Required' })).toBeVisible();
-  } else if (path === '/intel') {
-    await page.getByRole('link', { name: 'Threat Intel', exact: true }).click();
-    await expect(page.getByRole('heading', { name: 'Threat Intelligence' })).toBeVisible();
-  } else if (path.startsWith('/graph')) {
-    await page.getByRole('link', { name: 'Campaign Graph', exact: true }).click();
-    await expect(page.getByRole('heading', { name: /Campaign Correlation/i })).toBeVisible();
-  } else if (path === '/settings') {
-    await page.getByRole('link', { name: 'Settings', exact: true }).click();
-    await expect(page.getByRole('heading', { name: 'Settings' })).toBeVisible();
-  } else if (path === '/integrations') {
-    await page.getByRole('link', { name: 'Integrations', exact: true }).click();
-    await expect(page.getByRole('heading', { name: 'Integrations' })).toBeVisible();
-  }
+  await page.addInitScript(() => {
+    window.localStorage.setItem(
+      'sentineltrace-auth',
+      JSON.stringify({
+        state: {
+          user: {
+            id: '1',
+            email: 'analyst@sentineltrace.io',
+            full_name: 'Alex Mercer (SOC Lead)',
+            role: 'ADMIN',
+          },
+          isAuthenticated: true,
+          accessToken: 'mock-jwt-token-xyz',
+        },
+        version: 0,
+      })
+    );
+    window.localStorage.setItem(
+      'sentineltrace-workspace',
+      JSON.stringify({
+        state: {
+          currentWorkspaceId: '1',
+        },
+        version: 0,
+      })
+    );
+  });
+  await page.goto(path);
+  await page.waitForLoadState('domcontentloaded');
 }

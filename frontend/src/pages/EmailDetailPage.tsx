@@ -332,7 +332,10 @@ export function EmailDetailPage() {
       {/* ── Breadcrumb & Header ─────────────────────────────────────────── */}
       <div className="flex flex-col gap-1">
         <div className="flex items-center gap-2 text-xs font-mono text-[hsl(var(--foreground-subtle))]">
-          <Link to="/emails" className="hover:text-white transition-colors">Investigate</Link>
+          <Link to="/emails" aria-label="Back to analyses" className="hover:text-white transition-colors flex items-center gap-1">
+            <ArrowLeft className="w-3.5 h-3.5" />
+            <span>Back to analyses</span>
+          </Link>
           <span>&gt;</span>
           <span className="text-[hsl(var(--foreground-muted))]">Email Forensics</span>
         </div>
@@ -453,6 +456,14 @@ export function EmailDetailPage() {
                     <span>Geolocate IP</span>
                   </button>
                 )}
+                <Link
+                  to={`/graph?campaign_id=${(analysis as any).campaign_id || 'camp-fin-01'}&analysis_id=${analysis.id}`}
+                  className="bg-[#182030] hover:bg-[#1f2a3e] text-white border border-[#232e42] px-2.5 py-1.5 rounded text-xs font-mono flex items-center gap-1.5 transition-colors cursor-pointer"
+                  title="View Campaign Graph"
+                >
+                  <Network className="w-3.5 h-3.5 text-[#a855f7]" />
+                  <span>View Campaign Graph</span>
+                </Link>
                 <button
                   onClick={handleDownloadReport}
                   disabled={isDownloading}
@@ -505,7 +516,7 @@ export function EmailDetailPage() {
 
             <div className="bg-[#161c2b] border border-[#1f2a3e] rounded p-3 font-mono">
               <p className="text-[10px] uppercase text-[hsl(var(--foreground-subtle))] font-semibold">Subject</p>
-              <p className="text-xs text-white font-medium mt-1">{analysis.subject || '(No Subject)'}</p>
+              <h2 className="text-xs text-white font-bold mt-1">{analysis.subject || '(No Subject)'}</h2>
             </div>
           </div>
 

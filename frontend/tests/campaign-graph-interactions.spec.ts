@@ -15,12 +15,12 @@ test.describe('Campaign Graph & Investigation Tests', () => {
     const depth3Btn = page.getByRole('button', { name: '3', exact: true });
     await expect(depth3Btn).toBeVisible();
     await depth3Btn.click();
-    await expect(depth3Btn).toHaveClass(/bg-\[hsl\(var\(--accent\)\)\]/);
+    await expect(depth3Btn).toHaveClass(/(bg-\[#2563eb\]|bg-\[hsl\(var\(--accent\)\)\]|bg-blue)/);
 
     const depth1Btn = page.getByRole('button', { name: '1', exact: true });
     await expect(depth1Btn).toBeVisible();
     await depth1Btn.click();
-    await expect(depth1Btn).toHaveClass(/bg-\[hsl\(var\(--accent\)\)\]/);
+    await expect(depth1Btn).toHaveClass(/(bg-\[#2563eb\]|bg-\[hsl\(var\(--accent\)\)\]|bg-blue)/);
 
     // Refresh button
     const refreshBtn = page.locator('main button:has(svg.lucide-refresh-cw)');

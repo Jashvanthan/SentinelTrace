@@ -87,6 +87,13 @@ export function DashboardPage() {
         </div>
 
         <div className="flex items-center gap-3">
+          <Link
+            to="/emails"
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-[#3b82f6] hover:bg-[#2563eb] text-white text-xs font-mono font-medium rounded transition-colors"
+          >
+            <Mail className="w-3.5 h-3.5" />
+            <span>Analyze Email</span>
+          </Link>
           <div className="flex items-center gap-2 bg-[#121824] border border-[#232e42] rounded px-3 py-1.5 text-xs text-[hsl(var(--foreground-muted))] font-mono">
             <Calendar className="w-3.5 h-3.5 text-[hsl(var(--foreground-subtle))]" />
             <span>Last 24 Hours</span>
@@ -220,9 +227,10 @@ export function DashboardPage() {
             </h2>
             <Link
               to="/emails"
+              aria-label="View all email analyses"
               className="text-xs text-[#3b82f6] hover:underline font-mono flex items-center gap-1"
             >
-              <span>View All</span>
+              <span>View all email analyses</span>
               <ChevronRight className="w-3 h-3" />
             </Link>
           </div>

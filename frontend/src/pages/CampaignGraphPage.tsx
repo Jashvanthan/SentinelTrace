@@ -68,11 +68,21 @@ export function CampaignGraphPage() {
     depth,
   });
 
-  // Calculate raw nodes & links
+  // Calculate raw nodes & links strictly from backend workspace data
   const rawGraphData = useMemo(() => {
     if (data && data.nodes && data.nodes.length > 0) {
+      let activeNodes = data.nodes;
+      if (depth === 1) {
+        activeNodes = data.nodes.filter(n => (n.node_type || (n as any).nodeType) === 'Email' || (n.node_type || (n as any).nodeType) === 'Domain');
+      } else if (depth === 2) {
+        activeNodes = data.nodes.filter(n => (n.node_type || (n as any).nodeType) === 'Email' || (n.node_type || (n as any).nodeType) === 'Domain' || (n.node_type || (n as any).nodeType) === 'IPAddress');
+      }
+
+      const nodeIds = new Set(activeNodes.map(n => n.id));
+      const activeEdges = (data.edges || []).filter(e => nodeIds.has(e.source) && nodeIds.has(e.target));
+
       return {
-        nodes: data.nodes.map(n => ({
+        nodes: activeNodes.map(n => ({
           id: n.id,
           name: n.label || n.id,
           val: BASE_RADIUS[n.node_type || (n as any).nodeType] || 9,
@@ -80,7 +90,7 @@ export function CampaignGraphPage() {
           nodeType: n.node_type || (n as any).nodeType || 'Domain',
           properties: n.properties || {},
         })),
-        links: data.edges.map(e => ({
+        links: activeEdges.map(e => ({
           source: e.source,
           target: e.target,
           label: e.relationship_type || (e as any).label || 'CONNECTED',
@@ -88,38 +98,7 @@ export function CampaignGraphPage() {
       };
     }
 
-    // High quality demo fallback graph matching SOC investigation artifacts
-    const allNodes = [
-      { id: 'urgent_invoice.eml', name: 'urgent_invoice.eml', val: 10, color: '#3b82f6', nodeType: 'Email', properties: { Subject: 'URGENT: Outstanding Invoice #99281', Sender: 'billing@secure-paypal-update-auth.com' } },
-      { id: 'login-secure-update.com', name: 'secure-paypal-update-auth.com', val: 9, color: '#a855f7', nodeType: 'Domain', properties: { domain: 'secure-paypal-update-auth.com', reputation: 'HIGH_RISK' } },
-      { id: '192.168.45.221', name: '192.168.45.221', val: 9, color: '#f97316', nodeType: 'IPAddress', properties: { ip: '192.168.45.221', country: 'United States', asn: 'AS15169' } },
-      { id: 'UNC-2452', name: 'UNC-2452 (Threat Actor)', val: 13, color: '#f97316', nodeType: 'ThreatActor', properties: { name: 'UNC-2452', confidence: 'HIGH' } },
-      { id: 'malicious_payload.exe', name: 'invoice_q4_payload.exe', val: 8, color: '#eab308', nodeType: 'Attachment', properties: { filename: 'invoice_q4_payload.exe', hash: 'e3b8c44298fc8b9a...' } },
-      { id: 'c2-beacon-server.xyz', name: 'c2-beacon-server.xyz', val: 8, color: '#ef4444', nodeType: 'IOC', properties: { type: 'C2 Domain', value: 'c2-beacon-server.xyz' } },
-    ];
-    
-    const allLinks = [
-      { source: 'urgent_invoice.eml', target: 'login-secure-update.com', label: 'CONTAINS' },
-      { source: 'login-secure-update.com', target: '192.168.45.221', label: 'RESOLVES_TO' },
-      { source: '192.168.45.221', target: 'urgent_invoice.eml', label: 'SERVES_FILE' },
-      { source: 'UNC-2452', target: '192.168.45.221', label: 'ATTRIBUTED' },
-      { source: 'urgent_invoice.eml', target: 'malicious_payload.exe', label: 'ATTACHMENT' },
-      { source: '192.168.45.221', target: 'c2-beacon-server.xyz', label: 'BEACON_TO' },
-    ];
-
-    let filteredNodes = allNodes;
-    if (depth === 1) {
-      filteredNodes = allNodes.filter(n => n.nodeType === 'Email' || n.nodeType === 'Domain');
-    } else if (depth === 2) {
-      filteredNodes = allNodes.filter(n => n.nodeType === 'Email' || n.nodeType === 'Domain' || n.nodeType === 'IPAddress');
-    } else if (depth === 3) {
-      filteredNodes = allNodes.filter(n => n.nodeType !== 'ThreatActor');
-    }
-    
-    const nodeIds = new Set(filteredNodes.map(n => n.id));
-    const filteredLinks = allLinks.filter(l => nodeIds.has(l.source) && nodeIds.has(l.target));
-
-    return { nodes: filteredNodes, links: filteredLinks };
+    return { nodes: [], links: [] };
   }, [data, depth]);
 
   // Filtered Graph Data by Type & Search Query
@@ -507,36 +486,61 @@ export function CampaignGraphPage() {
             </div>
           </div>
 
-          {/* Canvas Render — High Quality 3D Balls + Midpoint Link Relationship Text */}
-          <ForceGraph2D
-            ref={fgRef}
-            graphData={filteredGraphData}
-            backgroundColor="#090d16"
-            enableZoomInteraction={true}
-            enablePanInteraction={true}
-            enablePointerInteraction={true}
-            enableNodeDrag={true}
-            onBackgroundClick={() => setSelectedNode(null)}
-            nodeColor={(node: any) => node.color}
-            nodeRelSize={9}
-            linkWidth={(link: any) => {
-              if (activeNode) {
-                return connectedLinkSet.has(link) ? 3 : 1;
-              }
-              return 1.5;
-            }}
-            linkColor={(link: any) => {
-              if (activeNode) {
-                return connectedLinkSet.has(link) ? '#3b82f6' : 'rgba(35, 46, 66, 0.2)';
-              }
-              return '#232e42';
-            }}
-            linkDirectionalParticles={(link: any) => (activeNode && connectedLinkSet.has(link) ? 4 : 2)}
-            linkDirectionalParticleSpeed={0.008}
-            linkDirectionalParticleWidth={(link: any) => (activeNode && connectedLinkSet.has(link) ? 3 : 2)}
-            linkDirectionalParticleColor={(link: any) => (activeNode && connectedLinkSet.has(link) ? '#3b82f6' : '#f97316')}
-            linkLabel={(link: any) => `Relationship: ${link.label}`}
-            nodeLabel={(node: any) => `${node.name || node.id} [${node.nodeType}]`}
+          {/* Canvas Render — Empty State or Interactive Force Graph */}
+          {isLoading ? (
+            <div className="flex flex-col items-center justify-center h-full gap-3 text-center p-6">
+              <RefreshCw className="w-8 h-8 text-[#3b82f6] animate-spin" />
+              <span className="text-xs text-[#94a3b8] font-mono">Loading campaign correlation graph...</span>
+            </div>
+          ) : filteredGraphData.nodes.length === 0 ? (
+            <div className="flex flex-col items-center justify-center h-full gap-4 text-center p-6">
+              <div className="w-14 h-14 rounded-2xl bg-[#121824] border border-[#232e42] flex items-center justify-center text-[#3b82f6] shadow-lg">
+                <Network className="w-7 h-7" />
+              </div>
+              <div className="space-y-1.5 max-w-md">
+                <h3 className="text-base font-semibold text-white">No Campaign Graph Available</h3>
+                <p className="text-xs text-[#94a3b8] leading-relaxed">
+                  No correlated email campaigns or threat infrastructure detected in this workspace yet. Upload and analyze emails to automatically construct threat correlation graphs.
+                </p>
+              </div>
+              <button
+                onClick={() => window.location.href = '/investigate'}
+                className="px-4 py-2 bg-[#2563eb] hover:bg-[#1d4ed8] text-white text-xs font-semibold rounded transition-colors flex items-center gap-2 cursor-pointer shadow-sm"
+              >
+                <Mail className="w-4 h-4" />
+                <span>Upload & Analyze Email</span>
+              </button>
+            </div>
+          ) : (
+            <ForceGraph2D
+              ref={fgRef}
+              graphData={filteredGraphData}
+              backgroundColor="#090d16"
+              enableZoomInteraction={true}
+              enablePanInteraction={true}
+              enablePointerInteraction={true}
+              enableNodeDrag={true}
+              onBackgroundClick={() => setSelectedNode(null)}
+              nodeColor={(node: any) => node.color}
+              nodeRelSize={9}
+              linkWidth={(link: any) => {
+                if (activeNode) {
+                  return connectedLinkSet.has(link) ? 3 : 1;
+                }
+                return 1.5;
+              }}
+              linkColor={(link: any) => {
+                if (activeNode) {
+                  return connectedLinkSet.has(link) ? '#3b82f6' : 'rgba(35, 46, 66, 0.2)';
+                }
+                return '#232e42';
+              }}
+              linkDirectionalParticles={(link: any) => (activeNode && connectedLinkSet.has(link) ? 4 : 2)}
+              linkDirectionalParticleSpeed={0.008}
+              linkDirectionalParticleWidth={(link: any) => (activeNode && connectedLinkSet.has(link) ? 3 : 2)}
+              linkDirectionalParticleColor={(link: any) => (activeNode && connectedLinkSet.has(link) ? '#3b82f6' : '#f97316')}
+              linkLabel={(link: any) => `Relationship: ${link.label}`}
+              nodeLabel={(node: any) => `${node.name || node.id} [${node.nodeType}]`}
             
             /* Render Relationship Labels on Links */
             linkCanvasObjectMode={() => 'after'}
@@ -639,7 +643,8 @@ export function CampaignGraphPage() {
               }
             }}
           />
-        </div>
+        )}
+      </div>
 
         {/* ── Right Side Column (Live Mouse Hover / Selection Telemetry Panel) ── */}
         <div className="w-full lg:w-[380px] bg-[#121824] border-t lg:border-t-0 lg:border-l border-[#232e42] min-h-[300px] lg:h-full flex flex-col z-20 shrink-0">
@@ -793,18 +798,18 @@ export function CampaignGraphPage() {
               </div>
             </div>
           ) : (
-            /* STATE 3: Default Active Campaign Summary */
+            /* STATE 3: Dynamic Active Campaign Summary */
             <div className="flex-1 flex flex-col h-full overflow-hidden">
               <div className="p-5 border-b border-[#232e42] flex items-start justify-between">
                 <div>
                   <span className="text-[10px] font-bold text-[#64748b] uppercase tracking-wider block font-mono">
-                    ACTIVE CAMPAIGN
+                    Investigation Panel — Workspace Campaign Status
                   </span>
                   <h2 className="text-xl font-bold text-white tracking-tight mt-0.5">
-                    Operation SilverTail
+                    {data?.campaign_id ? `Campaign ${data.campaign_id}` : rawGraphData.nodes.length > 0 ? 'Active Correlation Cluster' : 'No Active Campaigns'}
                   </h2>
                   <p className="text-xs text-[#94a3b8] font-mono mt-1">
-                    Last updated 14m ago
+                    {rawGraphData.nodes.length > 0 ? `${rawGraphData.nodes.length} Entities & ${rawGraphData.links.length} Connected Pivots` : 'No entity nodes analyzed in workspace'}
                   </p>
                 </div>
               </div>
@@ -820,10 +825,10 @@ export function CampaignGraphPage() {
                 <div className="grid grid-cols-2 gap-4">
                   <div className="bg-[#161c2b] border border-[#232e42] rounded p-4 space-y-1">
                     <span className="text-[10px] font-semibold text-[#94a3b8] uppercase tracking-wider block font-mono">
-                      Total Cases
+                      Graph Entities
                     </span>
                     <span className="text-3xl font-extrabold text-white font-mono">
-                      12
+                      {rawGraphData.nodes.length}
                     </span>
                   </div>
 
@@ -831,8 +836,11 @@ export function CampaignGraphPage() {
                     <span className="text-[10px] font-semibold text-[#94a3b8] uppercase tracking-wider block font-mono">
                       Risk Level
                     </span>
-                    <span className="text-2xl font-extrabold text-[#f97316] font-mono block mt-1">
-                      HIGH
+                    <span className={cn(
+                      "text-2xl font-extrabold font-mono block mt-1",
+                      rawGraphData.nodes.length === 0 ? "text-[#94a3b8]" : "text-[#f97316]"
+                    )}>
+                      {rawGraphData.nodes.length === 0 ? "NONE" : "ACTIVE"}
                     </span>
                   </div>
                 </div>
@@ -842,20 +850,18 @@ export function CampaignGraphPage() {
                   <span className="text-[10px] font-bold text-[#64748b] uppercase tracking-wider block font-mono">
                     DETECTED PATTERNS
                   </span>
-                  <div className="space-y-2 text-xs text-white">
-                    <div className="flex items-center gap-2.5 bg-[#090d16] border border-[#232e42] rounded p-2.5">
-                      <Key className="w-4 h-4 text-[#3b82f6] shrink-0" />
-                      <span className="font-semibold">Credential Harvesting</span>
+                  {rawGraphData.nodes.length === 0 ? (
+                    <div className="bg-[#090d16] border border-[#232e42] rounded p-3 text-xs text-[#94a3b8] font-mono">
+                      No threat patterns detected in this workspace yet.
                     </div>
-                    <div className="flex items-center gap-2.5 bg-[#090d16] border border-[#232e42] rounded p-2.5">
-                      <Radio className="w-4 h-4 text-[#f97316] shrink-0" />
-                      <span className="font-semibold">C2 Beaconing Pattern B</span>
+                  ) : (
+                    <div className="space-y-2 text-xs text-white">
+                      <div className="flex items-center gap-2.5 bg-[#090d16] border border-[#232e42] rounded p-2.5">
+                        <Key className="w-4 h-4 text-[#3b82f6] shrink-0" />
+                        <span className="font-semibold">Correlation Cluster Active</span>
+                      </div>
                     </div>
-                    <div className="flex items-center gap-2.5 bg-[#090d16] border border-[#232e42] rounded p-2.5">
-                      <Mail className="w-4 h-4 text-[#f97316] shrink-0" />
-                      <span className="font-semibold">Spear-phishing Lures</span>
-                    </div>
-                  </div>
+                  )}
                 </div>
 
                 {/* Artifact Composition Table */}
@@ -889,7 +895,7 @@ export function CampaignGraphPage() {
                         <tr>
                           <td className="py-2.5 px-3 flex items-center gap-2 font-sans">
                             <FileText className="w-3.5 h-3.5 text-[#3b82f6]" />
-                            <span>File Hashes</span>
+                            <span>File Hashes / IOCs</span>
                           </td>
                           <td className="py-2.5 px-3 text-right font-bold">{artifactComposition.hashCount}</td>
                         </tr>

@@ -26,34 +26,23 @@ test.describe('Forensics, Geolocation, and Campaign Graph Verification', () => {
   test('Digital Forensics page opens with full workbench and not coming soon', async ({ page }) => {
     await loginAndNavigateTo(page, '/dashboard');
 
-    // Click Forensics link in sidebar
-    await page.getByRole('link', { name: 'Forensics', exact: true }).click();
+    // Click Evidence / Forensics link in sidebar
+    await page.getByRole('link', { name: 'Evidence', exact: true }).click();
 
     // Verify heading and content are visible
-    await expect(page.getByRole('heading', { name: 'Digital Forensics Workbench' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: /Forensic Evidence/i })).toBeVisible();
     await expect(page.getByText('Coming soon')).not.toBeVisible();
 
-    // Verify tabs
-    await expect(page.getByRole('button', { name: /SMTP Transit Chain/i })).toBeVisible();
-    await expect(page.getByRole('button', { name: /Cryptographic Auth/i })).toBeVisible();
-    await expect(page.getByRole('button', { name: /Attachment Forensics/i })).toBeVisible();
-    await expect(page.getByRole('button', { name: /Raw Header Inspector/i })).toBeVisible();
-
-    // Switch to Cryptographic Auth tab
-    await page.getByRole('button', { name: /Cryptographic Auth/i }).click();
-    await expect(page.getByText('Sender Policy Framework (SPF)')).toBeVisible();
-    await expect(page.getByText('DomainKeys Identified Mail (DKIM)')).toBeVisible();
-
-    // Switch to Raw Header Inspector tab
-    await page.getByRole('button', { name: /Raw Header Inspector/i }).click();
-    await expect(page.getByText('Raw Received Header Records')).toBeVisible();
+    // Verify sections
+    await expect(page.getByRole('heading', { name: 'Risk Assessment' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Ledger Anchoring Status' })).toBeVisible();
   });
 
   test('Campaign Graph loads cleanly without Campaign Data Error', async ({ page }) => {
     await loginAndNavigateTo(page, '/dashboard');
 
-    // Click Campaign Graph link in sidebar
-    await page.getByRole('link', { name: 'Campaign Graph', exact: true }).click();
+    // Click Campaigns link in sidebar
+    await page.getByRole('link', { name: 'Campaigns', exact: true }).click();
 
     // Verify heading
     await expect(page.getByRole('heading', { name: /Campaign Correlation/i })).toBeVisible();

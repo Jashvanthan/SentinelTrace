@@ -101,10 +101,15 @@ test.describe('Email Analysis Page & Compound Component Tests', () => {
     await expect(page.getByText('URGENT: Payroll Account Verification Required').first()).toBeVisible();
     await expect(page.getByText('Invoice INV-98214 Attached').first()).toBeVisible();
 
-    // Test row deletion button
-    const deleteBtn = page.locator('tbody tr').first().getByTitle('Delete');
+    // Test row deletion button (opens confirmation modal)
+    const deleteBtn = page.locator('tbody tr').first().getByTitle(/Delete/i);
     if (await deleteBtn.isVisible()) {
       await deleteBtn.click();
+      // Dismiss modal by clicking Cancel
+      const cancelBtn = page.getByRole('button', { name: 'Cancel' });
+      if (await cancelBtn.isVisible()) {
+        await cancelBtn.click();
+      }
     }
 
     // Click on row to navigate

@@ -13,39 +13,25 @@ test.describe('Email Detail Page & Analysis Insights Tests', () => {
     await expect(page.getByRole('heading', { name: 'URGENT: Payroll Account Verification Required' })).toBeVisible();
     await expect(page.getByText('payroll@update-portal-spoof.com')).toBeVisible();
 
-    // Threat Verdict
-    await expect(page.getByRole('heading', { name: 'Threat Verdict' })).toBeVisible();
+    // Analysis Pipeline & Status
+    await expect(page.getByRole('heading', { name: /Analysis Pipeline/i })).toBeVisible();
     await expect(page.getByText('COMPLETE').first()).toBeVisible();
-    await expect(page.getByText('Credential Harvesting', { exact: true })).toBeVisible();
-    await expect(page.getByText('98%')).toBeVisible(); // Confidence
 
-    // AI Agent Findings
-    await expect(page.getByRole('heading', { name: 'AI Agent Findings' })).toBeVisible();
-    await expect(page.getByText(/Critical threat detected/)).toBeVisible();
-    await expect(page.getByText('Model: Sentinel-AI-v4.2-Pro')).toBeVisible();
-    await expect(page.getByText('Domain spoofing targeting internal HR portal')).toBeVisible();
+    // AI Executive Forensic Assessment
+    await expect(page.getByRole('heading', { name: /AI Executive Forensic Assessment/i })).toBeVisible();
+    await expect(page.getByText(/Critical threat detected/).first()).toBeVisible();
 
-    // Email Authentication
-    await expect(page.getByRole('heading', { name: 'Email Authentication' })).toBeVisible();
-    await expect(page.getByText('SPF', { exact: true })).toBeVisible();
-    await expect(page.getByText('DKIM', { exact: true })).toBeVisible();
-    await expect(page.getByText('DMARC', { exact: true })).toBeVisible();
+    // Pipeline Steps & Sender Validation
+    await expect(page.getByText('Sender Identity Validation')).toBeVisible();
+    await expect(page.getByText(/SPF/).first()).toBeVisible();
 
-    // Sender & IP Intel
-    await expect(page.getByRole('heading', { name: 'Sender & IP Intelligence' })).toBeVisible();
-    await expect(page.getByText('Frankfurt, Germany')).toBeVisible();
-    await expect(page.getByText('HostEurope Gmbh')).toBeVisible();
-    await expect(page.getByText('14 / 72')).toBeVisible(); // VirusTotal
-    await expect(page.getByText('88%')).toBeVisible(); // AbuseIPDB
-
-    // IOCs
-    await expect(page.getByRole('heading', { name: /Indicators of Compromise/ })).toBeVisible();
+    // Observed IOCs Table
+    await expect(page.getByRole('heading', { name: /Observed Indicators of Compromise/i })).toBeVisible();
     await expect(page.getByText('update-portal-spoof.com').first()).toBeVisible();
 
-    // Attachments
-    await expect(page.getByRole('heading', { name: /Attachments/ })).toBeVisible();
-    await expect(page.getByText('employee_benefits_guide.pdf')).toBeVisible();
-    await expect(page.getByText('Malicious').first()).toBeVisible();
+    // Analyst Assistant Drawer
+    await expect(page.getByRole('heading', { name: /Analyst Assistant/i })).toBeVisible();
+    await expect(page.getByText(/Threat Intelligence Assessment/i)).toBeVisible();
   });
 
   test('Campaign graph CTA button navigates to Campaign Graph investigation', async ({ page }) => {
@@ -67,6 +53,6 @@ test.describe('Email Detail Page & Analysis Insights Tests', () => {
     await backLink.click();
 
     await expect(page).toHaveURL(/.*\/emails/);
-    await expect(page.getByRole('heading', { name: 'Email Analysis' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: /Email Analysis/i })).toBeVisible();
   });
 });

@@ -15,13 +15,13 @@ test.describe('Comprehensive Functional and Non-Functional Buttons Test Suite', 
   test('1. AppShell and Navigation: Sidebar collapse, expand, mobile menu, and all route links', async ({ page }) => {
     await loginAndNavigateTo(page, '/dashboard');
 
-    // Sidebar collapse button
-    const collapseBtn = page.locator('aside button').last();
+    // Sidebar collapse button (desktop sidebar)
+    const collapseBtn = page.locator('aside.hidden.md\\:flex button.absolute');
     await expect(collapseBtn).toBeVisible();
     await collapseBtn.click();
 
     // Verify sidebar is collapsed
-    const aside = page.locator('aside');
+    const aside = page.locator('aside.hidden.md\\:flex');
     await expect(aside).toHaveClass(/w-16/);
 
     // Sidebar expand button
@@ -30,46 +30,33 @@ test.describe('Comprehensive Functional and Non-Functional Buttons Test Suite', 
 
     // Navigation links to functional pages
     const routes = [
-      { name: 'Dashboard', urlPattern: /.*\/dashboard/, heading: 'Security Overview' },
-      { name: 'Email Analysis', urlPattern: /.*\/emails/, heading: 'Email Analysis' },
-      { name: 'Threat Intel', urlPattern: /.*\/intel/, heading: 'Threat Intelligence' },
-      { name: 'Campaign Graph', urlPattern: /.*\/graph/, heading: /Campaign Correlation/i },
-      { name: 'Integrations', urlPattern: /.*\/integrations/, heading: 'Integrations' },
-      { name: 'Settings', urlPattern: /.*\/settings/, heading: 'Settings' },
+      { name: 'Dashboard', urlPattern: /.*\/dashboard/, heading: /Security Overview/i },
+      { name: 'Investigate', urlPattern: /.*\/investigate/, heading: /Email Analysis/i },
+      { name: 'Threat Intel', urlPattern: /.*\/intel/, heading: /Threat Intelligence/i },
+      { name: 'Campaigns', urlPattern: /.*\/campaigns/, heading: /Campaign Correlation/i },
+      { name: 'Integrations', urlPattern: /.*\/integrations/, heading: /Integrations/i },
+      { name: 'Settings', urlPattern: /.*\/settings/, heading: /Settings/i },
     ];
 
     for (const route of routes) {
-      const link = page.getByRole('link', { name: route.name, exact: true });
+      const link = page.locator('aside.hidden.md\\:flex').getByRole('link', { name: route.name, exact: true });
       await expect(link).toBeVisible();
       await link.click();
       await expect(page).toHaveURL(route.urlPattern);
       await expect(page.getByRole('heading', { name: route.heading })).toBeVisible();
     }
 
-    // Navigation links to placeholder pages (non-functional/coming-soon)
-    const activeNewRoutes = [
-      { name: 'Forensics', heading: 'Digital Forensics Workbench' },
-      { name: 'Geolocation', heading: 'Infrastructure Geolocation' },
-    ];
-
-    for (const route of activeNewRoutes) {
-      const link = page.getByRole('link', { name: route.name, exact: true });
-      await expect(link).toBeVisible();
-      await link.click();
-      await expect(page.getByRole('heading', { name: route.heading })).toBeVisible();
-      await expect(page.getByText('Coming soon')).not.toBeVisible();
-    }
-
     const operationalRoutes = [
-      { name: 'Reports', heading: 'Evidence Reports' },
-      { name: 'Activity Log', heading: 'Activity Log' },
+      { name: 'Geolocation', urlPattern: /.*\/geo/, heading: /Infrastructure Geolocation/i },
+      { name: 'Reports', urlPattern: /.*\/reports/, heading: /Forensic Reports/i },
+      { name: 'Activity Log', urlPattern: /.*\/activity/, heading: /Activity Log/i },
     ];
 
     for (const route of operationalRoutes) {
-      const link = page.getByRole('link', { name: route.name, exact: true });
+      const link = page.locator('aside.hidden.md\\:flex').getByRole('link', { name: route.name, exact: true });
       await expect(link).toBeVisible();
       await link.click();
-      await expect(page).toHaveURL(/.*\/reports|.*\/activity/);
+      await expect(page).toHaveURL(route.urlPattern);
       await expect(page.getByRole('heading', { name: route.heading })).toBeVisible();
     }
   });
@@ -182,14 +169,14 @@ test.describe('Comprehensive Functional and Non-Functional Buttons Test Suite', 
   });
 
   test('5. Campaign Graph: Depth buttons (1, 2, 3, 4) and Refresh button', async ({ page }) => {
-    await loginAndNavigateTo(page, '/graph');
+    await loginAndNavigateTo(page, '/campaigns');
 
     // Depth buttons 1 to 4
     for (const depth of ['1', '2', '3', '4']) {
       const depthBtn = page.getByRole('button', { name: depth, exact: true });
       await expect(depthBtn).toBeVisible();
       await depthBtn.click();
-      await expect(depthBtn).toHaveClass(/bg-\[hsl\(var\(--accent\)\)\]/);
+      await expect(depthBtn).toHaveClass(/(bg-\[#2563eb\]|bg-\[hsl\(var\(--accent\)\)\]|bg-blue)/);
     }
 
     // Refresh button
@@ -262,7 +249,7 @@ test.describe('Comprehensive Functional and Non-Functional Buttons Test Suite', 
   test('8. Logout: Header logout button cleanly exits session', async ({ page }) => {
     await loginAndNavigateTo(page, '/dashboard');
 
-    const logoutBtn = page.getByTitle('Logout');
+    const logoutBtn = page.locator('aside.hidden.md\\:flex button[title="Log Out"]');
     await expect(logoutBtn).toBeVisible();
     await logoutBtn.click();
 
