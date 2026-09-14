@@ -12,6 +12,8 @@ export interface GmailConnection {
   emails_fetched: number;
   emails_analyzed: number;
   workspace_id?: string;
+  created_at?: string;
+  updated_at?: string;
 }
 
 export interface GmailConfigUpdatePayload {

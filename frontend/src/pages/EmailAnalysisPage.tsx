@@ -52,14 +52,14 @@ export function EmailAnalysisPage() {
   return (
     <div className="space-y-5">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
           <h1 className="text-xl font-bold text-[hsl(var(--foreground))]">Email Analysis & Ingested Messages</h1>
-          <p className="text-sm text-[hsl(var(--foreground-muted))] mt-0.5">
+          <p className="text-xs sm:text-sm text-[hsl(var(--foreground-muted))] mt-0.5">
             Submit, synchronize, and review forensic email threat investigations
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 self-start sm:self-auto">
           <button
             onClick={() => refetch()}
             disabled={isFetching}
@@ -70,7 +70,7 @@ export function EmailAnalysisPage() {
           </button>
           <button
             onClick={() => setShowUpload(!showUpload)}
-            className="flex items-center gap-2 px-4 py-2 rounded-md bg-[hsl(var(--accent))] text-[hsl(var(--accent-foreground))] text-sm font-medium hover:bg-[hsl(var(--accent-hover))] transition-colors cursor-pointer"
+            className="flex items-center gap-2 px-3.5 sm:px-4 py-2 rounded-md bg-[hsl(var(--accent))] text-[hsl(var(--accent-foreground))] text-xs sm:text-sm font-medium hover:bg-[hsl(var(--accent-hover))] transition-colors cursor-pointer whitespace-nowrap"
           >
             <Upload className="w-4 h-4" />
             Upload .eml
@@ -79,11 +79,11 @@ export function EmailAnalysisPage() {
       </div>
 
       {/* Source Selection Tabs */}
-      <div className="flex items-center gap-2 border-b border-[hsl(var(--border))] pb-2">
+      <div className="flex items-center gap-2 border-b border-[hsl(var(--border))] pb-2 overflow-x-auto">
         <button
           onClick={() => { setSourceFilter(''); setPage(1); }}
           className={cn(
-            "px-3.5 py-1.5 rounded-md text-xs font-semibold transition-colors flex items-center gap-2 cursor-pointer",
+            "px-3.5 py-1.5 rounded-md text-xs font-semibold transition-colors flex items-center gap-2 cursor-pointer whitespace-nowrap shrink-0",
             sourceFilter === ''
               ? "bg-[hsl(var(--accent)/0.15)] text-[hsl(var(--accent))] border border-[hsl(var(--accent)/0.3)]"
               : "text-[hsl(var(--foreground-muted))] hover:bg-[hsl(var(--surface-2))] hover:text-[hsl(var(--foreground))]"
@@ -94,7 +94,7 @@ export function EmailAnalysisPage() {
         <button
           onClick={() => { setSourceFilter('upload'); setPage(1); }}
           className={cn(
-            "px-3.5 py-1.5 rounded-md text-xs font-semibold transition-colors flex items-center gap-2 cursor-pointer",
+            "px-3.5 py-1.5 rounded-md text-xs font-semibold transition-colors flex items-center gap-2 cursor-pointer whitespace-nowrap shrink-0",
             sourceFilter === 'upload'
               ? "bg-[hsl(var(--accent)/0.15)] text-[hsl(var(--accent))] border border-[hsl(var(--accent)/0.3)]"
               : "text-[hsl(var(--foreground-muted))] hover:bg-[hsl(var(--surface-2))] hover:text-[hsl(var(--foreground))]"
@@ -106,7 +106,7 @@ export function EmailAnalysisPage() {
         <button
           onClick={() => { setSourceFilter('google'); setPage(1); }}
           className={cn(
-            "px-3.5 py-1.5 rounded-md text-xs font-semibold transition-colors flex items-center gap-2 cursor-pointer",
+            "px-3.5 py-1.5 rounded-md text-xs font-semibold transition-colors flex items-center gap-2 cursor-pointer whitespace-nowrap shrink-0",
             sourceFilter === 'google'
               ? "bg-[hsl(var(--accent)/0.15)] text-[hsl(var(--accent))] border border-[hsl(var(--accent)/0.3)]"
               : "text-[hsl(var(--foreground-muted))] hover:bg-[hsl(var(--surface-2))] hover:text-[hsl(var(--foreground))]"
@@ -119,7 +119,7 @@ export function EmailAnalysisPage() {
 
       {/* Upload Panel */}
       {showUpload && (
-        <div className="card-surface p-6">
+        <div className="card-surface p-4 sm:p-6">
           <h2 className="font-semibold text-[hsl(var(--foreground))] mb-4 flex items-center gap-2">
             <Upload className="w-4 h-4 text-[hsl(var(--accent))]" />
             Upload Email for Analysis
@@ -134,8 +134,8 @@ export function EmailAnalysisPage() {
       )}
 
       {/* Filters */}
-      <div className="flex flex-wrap items-center gap-3">
-        <div className="relative flex-1 min-w-[200px] max-w-xs">
+      <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 flex-wrap">
+        <div className="relative w-full sm:w-auto flex-1 min-w-[200px]">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[hsl(var(--foreground-subtle))]" />
           <input
             type="text"
@@ -146,44 +146,46 @@ export function EmailAnalysisPage() {
           />
         </div>
 
-        <select
-          value={statusFilter}
-          onChange={(e) => { setStatusFilter(e.target.value as any); setPage(1); }}
-          className="px-3 py-2 bg-[hsl(var(--surface-1))] border border-[hsl(var(--border))] rounded-md text-sm text-[hsl(var(--foreground))] focus:outline-none"
-        >
-          <option value="">All Statuses</option>
-          <option value="PENDING">Not Analyzed (Pending)</option>
-          <option value="PROCESSING">Processing</option>
-          <option value="COMPLETE">Complete (Analyzed)</option>
-          <option value="FAILED">Failed</option>
-          <option value="QUARANTINED">Quarantined</option>
-        </select>
-
-        <select
-          value={severityFilter}
-          onChange={(e) => { setSeverityFilter(e.target.value as any); setPage(1); }}
-          className="px-3 py-2 bg-[hsl(var(--surface-1))] border border-[hsl(var(--border))] rounded-md text-sm text-[hsl(var(--foreground))] focus:outline-none"
-        >
-          <option value="">All Severities</option>
-          <option value="CRITICAL">Critical</option>
-          <option value="HIGH">High</option>
-          <option value="MEDIUM">Medium</option>
-          <option value="LOW">Low</option>
-          <option value="INFO">Info</option>
-        </select>
-
-        {(search || statusFilter || severityFilter || sourceFilter) && (
-          <button
-            onClick={() => { setSearch(''); setStatusFilter(''); setSeverityFilter(''); setSourceFilter(''); setPage(1); }}
-            className="text-xs text-[hsl(var(--foreground-subtle))] hover:text-[hsl(var(--foreground))] transition-colors cursor-pointer"
+        <div className="flex items-center gap-2 flex-wrap">
+          <select
+            value={statusFilter}
+            onChange={(e) => { setStatusFilter(e.target.value as any); setPage(1); }}
+            className="flex-1 sm:flex-initial px-3 py-2 bg-[hsl(var(--surface-1))] border border-[hsl(var(--border))] rounded-md text-sm text-[hsl(var(--foreground))] focus:outline-none"
           >
-            Clear filters
-          </button>
-        )}
+            <option value="">All Statuses</option>
+            <option value="PENDING">Not Analyzed (Pending)</option>
+            <option value="PROCESSING">Processing</option>
+            <option value="COMPLETE">Complete (Analyzed)</option>
+            <option value="FAILED">Failed</option>
+            <option value="QUARANTINED">Quarantined</option>
+          </select>
 
-        <span className="ml-auto text-xs text-[hsl(var(--foreground-subtle))]">
-          {data?.total ?? 0} results
-        </span>
+          <select
+            value={severityFilter}
+            onChange={(e) => { setSeverityFilter(e.target.value as any); setPage(1); }}
+            className="flex-1 sm:flex-initial px-3 py-2 bg-[hsl(var(--surface-1))] border border-[hsl(var(--border))] rounded-md text-sm text-[hsl(var(--foreground))] focus:outline-none"
+          >
+            <option value="">All Severities</option>
+            <option value="CRITICAL">Critical</option>
+            <option value="HIGH">High</option>
+            <option value="MEDIUM">Medium</option>
+            <option value="LOW">Low</option>
+            <option value="INFO">Info</option>
+          </select>
+
+          {(search || statusFilter || severityFilter || sourceFilter) && (
+            <button
+              onClick={() => { setSearch(''); setStatusFilter(''); setSeverityFilter(''); setSourceFilter(''); setPage(1); }}
+              className="text-xs text-[hsl(var(--foreground-subtle))] hover:text-[hsl(var(--foreground))] transition-colors cursor-pointer px-2 py-1"
+            >
+              Clear filters
+            </button>
+          )}
+
+          <span className="ml-auto text-xs text-[hsl(var(--foreground-subtle))] font-mono whitespace-nowrap">
+            {data?.total ?? 0} results
+          </span>
+        </div>
       </div>
 
       {/* Table */}

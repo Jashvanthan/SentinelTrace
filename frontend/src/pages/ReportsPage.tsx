@@ -240,7 +240,7 @@ export function ReportsPage() {
         )}
 
         {/* ── Table Footer Pagination ─────────────────────────────────────── */}
-        <div className="p-3 bg-[#090d16] border-t border-[#232e42] flex items-center justify-between text-xs text-[#64748b] font-mono">
+        <div className="p-3 bg-[#090d16] border-t border-[#232e42] flex flex-col sm:flex-row items-center justify-between gap-2 text-xs text-[#64748b] font-mono">
           <span>
             Showing {startItem} to {endItem} of {totalItems} entries (Page {page} of {totalPages})
           </span>

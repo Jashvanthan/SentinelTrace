@@ -18,6 +18,7 @@ const ReportsPage = lazy(() => import('@/pages/ReportsPage').then((m) => ({ defa
 const ActivityLogPage = lazy(() => import('@/pages/ActivityLogPage').then((m) => ({ default: m.ActivityLogPage })));
 const IntegrationsPage = lazy(() => import('@/pages/IntegrationsPage').then((m) => ({ default: m.IntegrationsPage })));
 const SettingsPage = lazy(() => import('@/pages/SettingsPage').then((m) => ({ default: m.SettingsPage })));
+const HelpCenterPage = lazy(() => import('@/pages/HelpCenterPage').then((m) => ({ default: m.HelpCenterPage })));
 
 const PageLoader = () => (
   <div className="flex flex-col items-center justify-center h-64 gap-3">
@@ -177,6 +178,14 @@ const router = createBrowserRouter([
             element: (
               <Suspense fallback={<PageLoader />}>
                 <IntegrationsPage />
+              </Suspense>
+            ),
+          },
+          {
+            path: 'help',
+            element: (
+              <Suspense fallback={<PageLoader />}>
+                <HelpCenterPage />
               </Suspense>
             ),
           },

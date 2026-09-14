@@ -7,7 +7,8 @@ import { Shield, Eye, EyeOff, ExternalLink, UserPlus, LogIn, AlertCircle, CheckC
 import { useLogin, useRegister } from '@/api/hooks';
 import { useAuthStore, useNotificationStore } from '@/store';
 import apiClient, { setAccessToken } from '@/lib/api';
-import { cn } from '@/utils';
+import { sendWelcomeEmail } from '@/services/emailService';
+import { cn, extractErrorMessage } from '@/utils';
 
 // Google pending registration state (parsed from URL)
 interface GooglePendingState {
@@ -91,10 +92,17 @@ export function LoginPage() {
       return;
     }
 
-    // ── Case 4: Google account collision (email already registered locally) ──
+    // ── Case 4: Google account collision (already registered) ──
     if (params.has('error') && params.get('error') === 'account_exists') {
+      setMode('login');
+      const errorEmail = params.get('email') || '';
+      if (errorEmail) {
+        setEmail(decodeURIComponent(errorEmail));
+      }
       setFormError(
-        'An account with this email already exists. Please sign in using your existing account.'
+        errorEmail
+          ? `The Google account (${decodeURIComponent(errorEmail)}) is already registered with SentinelTrace. Please sign in below.`
+          : 'This Google account is already registered with SentinelTrace. Please sign in below.'
       );
       navigate('/login', { replace: true });
       return;
@@ -129,7 +137,7 @@ export function LoginPage() {
         setAccessToken(data.access_token);
         navigate(from, { replace: true });
       } catch (err: any) {
-        const msg = err?.response?.data?.detail || 'Invalid email or password.';
+        const msg = extractErrorMessage(err, 'Invalid email or password.');
         setFormError(msg);
         notify({ type: 'error', title: 'Login Failed', description: msg });
       }
@@ -144,9 +152,32 @@ export function LoginPage() {
         const data = await login.mutateAsync({ email, password });
         setAuth(data.user, data.access_token);
         setAccessToken(data.access_token);
+
+        // Dispatches EmailJS welcome notification safely (non-blocking)
+        sendWelcomeEmail({
+          name: data.user.full_name || fullName.trim() || data.user.email.split('@')[0],
+          email: data.user.email,
+          workspaceName: 'Personal Workspace',
+          applicationUrl: window.location.origin,
+        }).then((res) => {
+          if (res.status === 'SENT') {
+            notify({
+              type: 'info',
+              title: 'Welcome Email Sent',
+              description: `Confirmation email sent to ${data.user.email}.`,
+            });
+          }
+        }).catch(() => {});
+
+        notify({
+          type: 'success',
+          title: 'Account Created',
+          description: `Welcome to SentinelTrace, ${data.user.full_name || data.user.email}!`,
+        });
+
         navigate(from, { replace: true });
       } catch (err: any) {
-        const msg = err?.response?.data?.detail || 'Registration failed. The email may already be registered.';
+        const msg = extractErrorMessage(err, 'Registration failed. The email may already be registered.');
         setFormError(msg);
         notify({ type: 'error', title: 'Registration Failed', description: msg });
       }
@@ -168,10 +199,11 @@ export function LoginPage() {
       window.location.href = data.authorization_url;
     } catch (err: any) {
       setIsGoogleLoading(false);
+      const msg = extractErrorMessage(err, 'Failed to start Google OAuth flow');
       notify({
         type: 'error',
         title: 'Google OAuth Error',
-        description: err.message || 'Failed to start Google OAuth flow',
+        description: msg,
       });
     }
   };
@@ -191,7 +223,7 @@ export function LoginPage() {
       });
       const data = await res.json();
       if (!res.ok) {
-        const detail = data?.detail || 'Google registration could not be completed.';
+        const detail = extractErrorMessage(data, 'Google registration could not be completed.');
         if (res.status === 401 && detail.toLowerCase().includes('expired')) {
           setFormError('Your Google registration session has expired. Please try again.');
         } else if (res.status === 409) {
@@ -206,10 +238,27 @@ export function LoginPage() {
       // Success — set auth and navigate
       setAuth(data.user, data.access_token);
       setAccessToken(data.access_token);
-      notify({ type: 'success', title: 'Account Created', description: `Welcome to SentinelTrace, ${data.user.full_name}!` });
+
+      // Dispatches EmailJS welcome notification safely (non-blocking)
+      sendWelcomeEmail({
+        name: data.user.full_name || googlePending.name || data.user.email.split('@')[0],
+        email: data.user.email,
+        workspaceName: 'Personal Workspace',
+        applicationUrl: window.location.origin,
+      }).then((res) => {
+        if (res.status === 'SENT') {
+          notify({
+            type: 'info',
+            title: 'Welcome Email Sent',
+            description: `Confirmation email sent to ${data.user.email}.`,
+          });
+        }
+      }).catch(() => {});
+
+      notify({ type: 'success', title: 'Account Created', description: `Welcome to SentinelTrace, ${data.user.full_name || data.user.email}!` });
       navigate(from, { replace: true });
     } catch (err: any) {
-      setFormError('Google registration could not be completed. Please try again.');
+      setFormError(extractErrorMessage(err, 'Google registration could not be completed. Please try again.'));
     } finally {
       setIsCompletingGoogleReg(false);
     }
@@ -246,7 +295,12 @@ export function LoginPage() {
               type="button"
               role="tab"
               aria-selected={mode === 'login'}
-              onClick={() => { setMode('login'); setFormError(null); setGooglePending(null); }}
+              onClick={() => {
+                setMode('login');
+                setFormError(null);
+                setFormSuccess(null);
+                setGooglePending(null);
+              }}
               className={cn(
                 'flex-1 pb-3 text-sm font-semibold flex items-center justify-center gap-2 border-b-2 transition-colors',
                 mode === 'login'
@@ -261,7 +315,15 @@ export function LoginPage() {
               type="button"
               role="tab"
               aria-selected={mode === 'register'}
-              onClick={() => { setMode('register'); setFormError(null); setGooglePending(null); }}
+              onClick={() => {
+                setMode('register');
+                setFormError(null);
+                setFormSuccess(null);
+                setGooglePending(null);
+                setEmail('');
+                setPassword('');
+                setFullName('');
+              }}
               className={cn(
                 'flex-1 pb-3 text-sm font-semibold flex items-center justify-center gap-2 border-b-2 transition-colors',
                 mode === 'register'
@@ -364,11 +426,11 @@ export function LoginPage() {
                     autoComplete="name"
                     value={fullName}
                     onChange={(e) => setFullName(e.target.value)}
+                    placeholder="Enter your full name"
                     className="w-full px-3 py-2.5 bg-[hsl(var(--surface-2))] border border-[hsl(var(--border))]
                                rounded-md text-sm text-[hsl(var(--foreground))]
                                placeholder-[hsl(var(--foreground-subtle))]
                                focus:border-[hsl(var(--accent)/0.6)] focus:outline-none transition-colors"
-                    placeholder="Security Analyst"
                   />
                 </div>
               )}
@@ -385,11 +447,11 @@ export function LoginPage() {
                   required
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
+                  placeholder={mode === 'register' ? 'name@company.com' : 'Enter your email'}
                   className="w-full px-3 py-2.5 bg-[hsl(var(--surface-2))] border border-[hsl(var(--border))]
                              rounded-md text-sm text-[hsl(var(--foreground))]
                              placeholder-[hsl(var(--foreground-subtle))]
                              focus:border-[hsl(var(--accent)/0.6)] focus:outline-none transition-colors"
-                  placeholder="analyst@sentineltrace.io"
                 />
               </div>
 
@@ -406,11 +468,11 @@ export function LoginPage() {
                     required
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
+                    placeholder={mode === 'register' ? 'Create a secure password (min. 8 chars)' : 'Enter your password'}
                     className="w-full px-3 py-2.5 pr-10 bg-[hsl(var(--surface-2))] border border-[hsl(var(--border))]
                                rounded-md text-sm text-[hsl(var(--foreground))]
                                placeholder-[hsl(var(--foreground-subtle))]
                                focus:border-[hsl(var(--accent)/0.6)] focus:outline-none transition-colors"
-                    placeholder="••••••••••••"
                   />
                   <button
                     type="button"

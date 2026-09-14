@@ -274,9 +274,9 @@ export function ForensicsPage() {
           </p>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2 flex-wrap w-full sm:w-auto">
           {/* Target Selector */}
-          <div className="relative min-w-[260px] max-w-[320px]">
+          <div className="relative w-full sm:w-auto min-w-0 sm:min-w-[240px] max-w-full sm:max-w-[320px]">
             <select
               value={activeId || ''}
               onChange={(e) => setSelectedAnalysisId(e.target.value)}
@@ -592,8 +592,8 @@ export function ForensicsPage() {
           </div>
 
           {/* Level 1 Leaf Hashes */}
-          <div className="flex items-center justify-center gap-12 w-full max-w-lg">
-            <div className="bg-[#121824] border border-[#232e42] rounded px-5 py-2 text-center space-y-0.5 flex-1">
+          <div className="flex flex-col sm:flex-row items-center justify-center gap-3 sm:gap-12 w-full max-w-lg">
+            <div className="bg-[#121824] border border-[#232e42] rounded px-5 py-2 text-center space-y-0.5 w-full sm:flex-1">
               <span className="text-[10px] font-semibold text-[#64748b] uppercase tracking-wider block font-mono">
                 Hash 0-0 (Header & Auth)
               </span>
@@ -602,7 +602,7 @@ export function ForensicsPage() {
               </span>
             </div>
 
-            <div className="bg-[#121824] border border-[#232e42] rounded px-5 py-2 text-center space-y-0.5 flex-1">
+            <div className="bg-[#121824] border border-[#232e42] rounded px-5 py-2 text-center space-y-0.5 w-full sm:flex-1">
               <span className="text-[10px] font-semibold text-[#64748b] uppercase tracking-wider block font-mono">
                 Hash 0-1 (Payload & Artifacts)
               </span>

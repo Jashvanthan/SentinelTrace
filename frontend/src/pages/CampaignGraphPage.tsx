@@ -440,9 +440,9 @@ export function CampaignGraphPage() {
       </div>
 
       {/* ── Main Canvas & Right Side Column ─────────────────────────────── */}
-      <div className="relative h-[calc(100vh-14rem)] w-full flex bg-[#090d16] border border-[#232e42] rounded overflow-hidden">
+      <div className="relative min-h-[600px] h-auto lg:h-[calc(100vh-14rem)] w-full flex flex-col lg:flex-row bg-[#090d16] border border-[#232e42] rounded overflow-hidden">
         {/* Left Canvas Area (High Quality 3D Radial Balls + Relationship Label Canvas) */}
-        <div className="relative flex-1 h-full touch-none select-none overflow-hidden">
+        <div className="relative flex-1 min-h-[360px] sm:min-h-[460px] lg:min-h-0 h-[50vh] sm:h-[60vh] lg:h-full touch-none select-none overflow-hidden">
           {/* Top-Left Controls Toolbar (Zoom & Up/Down/Left/Right Directional Pan) */}
           <div className="absolute top-4 left-4 z-10 flex flex-col bg-[#121824]/95 backdrop-blur border border-[#232e42] rounded-lg p-1.5 shadow-xl gap-1.5">
             {/* Zoom Controls */}
@@ -642,7 +642,7 @@ export function CampaignGraphPage() {
         </div>
 
         {/* ── Right Side Column (Live Mouse Hover / Selection Telemetry Panel) ── */}
-        <div className="w-[380px] bg-[#121824] border-l border-[#232e42] h-full flex flex-col z-20 shrink-0">
+        <div className="w-full lg:w-[380px] bg-[#121824] border-t lg:border-t-0 lg:border-l border-[#232e42] min-h-[300px] lg:h-full flex flex-col z-20 shrink-0">
           
           {/* STATE 1: Mouse Hovered or Clicked Node Inspection */}
           {activeNode ? (

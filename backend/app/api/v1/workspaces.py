@@ -97,6 +97,10 @@ async def list_workspaces(
         select(Workspace, WorkspaceMember.role)
         .join(WorkspaceMember, WorkspaceMember.workspace_id == Workspace.id)
         .where(WorkspaceMember.user_id == current_user.id)
+        .order_by(
+            (Workspace.owner_id == current_user.id).desc(),
+            Workspace.created_at.asc(),
+        )
     )
     result = await db.execute(stmt)
     rows = result.all()

@@ -61,17 +61,17 @@ export function DashboardPage() {
   }
 
   // Calculate risk distribution percentages from actual stats
-  const totalScanned = stats?.total_emails_scanned || 1;
-  const criticalCount = stats?.recent_emails?.filter(e => e.severity === 'CRITICAL').length || 0;
-  const highCount = stats?.recent_emails?.filter(e => e.severity === 'HIGH').length || 0;
-  const mediumCount = stats?.recent_emails?.filter(e => e.severity === 'MEDIUM').length || 0;
-  const lowCount = stats?.recent_emails?.filter(e => e.severity === 'INFO' || !e.severity).length || 0;
-  const totalRecent = Math.max(1, criticalCount + highCount + mediumCount + lowCount);
+  const totalScanned = stats?.total_emails_scanned ?? 0;
+  const criticalCount = stats?.recent_emails?.filter((e) => e.severity === 'CRITICAL').length || 0;
+  const highCount = stats?.recent_emails?.filter((e) => e.severity === 'HIGH').length || 0;
+  const mediumCount = stats?.recent_emails?.filter((e) => e.severity === 'MEDIUM').length || 0;
+  const lowCount = stats?.recent_emails?.filter((e) => e.severity === 'INFO' || e.severity === 'LOW').length || 0;
+  const totalRecent = criticalCount + highCount + mediumCount + lowCount;
 
-  const critPct = Math.round((criticalCount / totalRecent) * 100);
-  const highPct = Math.round((highCount / totalRecent) * 100);
-  const medPct = Math.round((mediumCount / totalRecent) * 100);
-  const lowPct = 100 - critPct - highPct - medPct;
+  const critPct = totalRecent > 0 ? Math.round((criticalCount / totalRecent) * 100) : 0;
+  const highPct = totalRecent > 0 ? Math.round((highCount / totalRecent) * 100) : 0;
+  const medPct = totalRecent > 0 ? Math.round((mediumCount / totalRecent) * 100) : 0;
+  const lowPct = totalRecent > 0 ? Math.max(0, 100 - critPct - highPct - medPct) : 0;
 
   return (
     <div className="space-y-6">
@@ -102,12 +102,11 @@ export function DashboardPage() {
         </div>
       )}
 
-      {/* ── Top Metric Cards (4-Column Grid matching Screenshot 2) ────────── */}
+      {/* ── Top Metric Cards ────────────────────────────────────────────── */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard
           title="EMAILS ANALYZED"
           value={isLoading ? undefined : (stats?.total_emails_scanned ?? 0).toLocaleString()}
-          trend="↑ 5%"
           icon={Mail}
           variant="default"
           isLoading={isLoading}
@@ -115,17 +114,16 @@ export function DashboardPage() {
         <StatCard
           title="THREATS DETECTED"
           value={isLoading ? undefined : (stats?.threats_detected ?? 0).toLocaleString()}
-          trend="↓ 2%"
           icon={ShieldAlert}
-          variant="high"
+          variant={stats?.threats_detected ? 'high' : 'default'}
           isLoading={isLoading}
         />
         <StatCard
           title="CRITICAL CASES"
           value={isLoading ? undefined : (criticalCount > 0 ? criticalCount : stats?.active_campaigns ?? 0)}
-          badgeText="Requires Action"
+          badgeText={criticalCount > 0 ? 'Requires Action' : undefined}
           icon={AlertTriangle}
-          variant="critical"
+          variant={criticalCount > 0 ? 'critical' : 'default'}
           isLoading={isLoading}
         />
         <StatCard
@@ -135,10 +133,16 @@ export function DashboardPage() {
               ? undefined
               : stats?.average_threat_score !== null && stats?.average_threat_score !== undefined
               ? `${Math.round(stats.average_threat_score)} /100`
-              : '42 /100'
+              : '0 /100'
           }
           icon={TrendingUp}
-          variant="medium"
+          variant={
+            stats?.average_threat_score && stats.average_threat_score >= 70
+              ? 'critical'
+              : stats?.average_threat_score && stats.average_threat_score >= 40
+              ? 'medium'
+              : 'default'
+          }
           isLoading={isLoading}
         />
       </div>
@@ -159,7 +163,10 @@ export function DashboardPage() {
                   <span className="text-[hsl(var(--foreground-muted))]">{critPct}%</span>
                 </div>
                 <div className="h-2 w-full bg-[#182030] rounded-full overflow-hidden">
-                  <div className="h-full bg-red-500 rounded-full transition-all duration-300" style={{ width: `${Math.max(4, critPct)}%` }} />
+                  <div
+                    className="h-full bg-red-500 rounded-full transition-all duration-300"
+                    style={{ width: `${critPct}%` }}
+                  />
                 </div>
               </div>
 
@@ -169,7 +176,10 @@ export function DashboardPage() {
                   <span className="text-[hsl(var(--foreground-muted))]">{highPct}%</span>
                 </div>
                 <div className="h-2 w-full bg-[#182030] rounded-full overflow-hidden">
-                  <div className="h-full bg-orange-500 rounded-full transition-all duration-300" style={{ width: `${Math.max(4, highPct)}%` }} />
+                  <div
+                    className="h-full bg-orange-500 rounded-full transition-all duration-300"
+                    style={{ width: `${highPct}%` }}
+                  />
                 </div>
               </div>
 
@@ -179,7 +189,10 @@ export function DashboardPage() {
                   <span className="text-[hsl(var(--foreground-muted))]">{medPct}%</span>
                 </div>
                 <div className="h-2 w-full bg-[#182030] rounded-full overflow-hidden">
-                  <div className="h-full bg-blue-500 rounded-full transition-all duration-300" style={{ width: `${Math.max(4, medPct)}%` }} />
+                  <div
+                    className="h-full bg-blue-500 rounded-full transition-all duration-300"
+                    style={{ width: `${medPct}%` }}
+                  />
                 </div>
               </div>
 
@@ -189,7 +202,10 @@ export function DashboardPage() {
                   <span className="text-[hsl(var(--foreground-muted))]">{lowPct}%</span>
                 </div>
                 <div className="h-2 w-full bg-[#182030] rounded-full overflow-hidden">
-                  <div className="h-full bg-slate-500 rounded-full transition-all duration-300" style={{ width: `${Math.max(4, lowPct)}%` }} />
+                  <div
+                    className="h-full bg-slate-500 rounded-full transition-all duration-300"
+                    style={{ width: `${lowPct}%` }}
+                  />
                 </div>
               </div>
             </div>

@@ -356,6 +356,20 @@ async def login_google_user(
     )
 
     if ext_id:
+        if intent == "register":
+            await write_audit_log(
+                db,
+                action="GOOGLE_REGISTER_COLLISION_EXISTING_USER",
+                user_id=ext_id.user_id,
+                request=request,
+                details={"email": email, "intent": intent},
+                outcome="FAILURE",
+            )
+            raise HTTPException(
+                status.HTTP_409_CONFLICT,
+                "This Google account is already registered with SentinelTrace. Please sign in instead.",
+            )
+
         # ── CASE A: Existing Google-linked account → LOGIN ──
         user = await db.get(User, ext_id.user_id)
         if not user or not user.is_active:
@@ -377,11 +391,11 @@ async def login_google_user(
             user=UserResponse.model_validate(user),
         )
 
-    # Step 2: No ExternalIdentity. Check email collision with LOCAL accounts.
+    # Step 2: No ExternalIdentity. Check email collision with LOCAL or existing accounts.
     existing_user = await db.scalar(select(User).where(User.email == email))
     if existing_user:
-        if existing_user.auth_provider == AuthProvider.LOCAL:
-            # ── CASE B: Email exists as LOCAL account → block, do NOT merge ──
+        if existing_user.auth_provider == AuthProvider.LOCAL or intent == "register":
+            # ── CASE B: Email exists as LOCAL account or intent is register → block ──
             await write_audit_log(
                 db, action="GOOGLE_ACCOUNT_COLLISION",
                 user_id=existing_user.id,

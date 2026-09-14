@@ -7,7 +7,7 @@ import {
   Mail, CheckCircle2, AlertCircle, RefreshCw, Plus, Loader2,
   Shield, Zap, Radio, Power, Eye, Unlink
 } from 'lucide-react';
-import { cn } from '@/utils';
+import { cn, extractErrorMessage } from '@/utils';
 
 export function IntegrationsPage() {
   const { currentWorkspaceId } = useWorkspaceStore();
@@ -24,8 +24,8 @@ export function IntegrationsPage() {
   const errorParam = searchParams.get('error');
 
   const { data: connection, isLoading } = useGmailConnection(currentWorkspaceId);
-  const syncMutation = useSyncGmail(currentWorkspaceId);
   const updateConfigMutation = useUpdateGmailConfig(currentWorkspaceId);
+  const syncMutation = useSyncGmail(currentWorkspaceId);
 
   if (!currentWorkspaceId) {
     return (
@@ -45,7 +45,7 @@ export function IntegrationsPage() {
         window.location.href = authUrl;
       }
     } catch (err: any) {
-      setActionError(err.response?.data?.detail || 'Failed to initiate Gmail OAuth. Please check your workspace permissions.');
+      setActionError(extractErrorMessage(err, 'Failed to initiate Gmail OAuth. Please check your workspace permissions.'));
       setIsConnecting(false);
     }
   };
@@ -59,7 +59,7 @@ export function IntegrationsPage() {
       await integrationsApi.disconnectGmail(currentWorkspaceId);
       window.location.reload();
     } catch (err: any) {
-      setActionError(err.response?.data?.detail || 'Failed to disconnect Gmail.');
+      setActionError(extractErrorMessage(err, 'Failed to disconnect Gmail.'));
       setIsDisconnecting(false);
     }
   };
@@ -72,7 +72,7 @@ export function IntegrationsPage() {
         monitoring_enabled: nextState,
       });
     } catch (err: any) {
-      setActionError(err.response?.data?.detail || 'Failed to update monitoring status.');
+      setActionError(extractErrorMessage(err, 'Failed to update monitoring status.'));
     }
   };
 
@@ -83,7 +83,7 @@ export function IntegrationsPage() {
         analysis_mode: mode,
       });
     } catch (err: any) {
-      setActionError(err.response?.data?.detail || 'Failed to update analysis mode.');
+      setActionError(extractErrorMessage(err, 'Failed to update analysis mode.'));
     }
   };
 
@@ -95,7 +95,7 @@ export function IntegrationsPage() {
       setSyncFeedback('Synchronization queued. Fetching messages according to configured mode.');
       setTimeout(() => setSyncFeedback(null), 5000);
     } catch (err: any) {
-      setActionError(err.response?.data?.detail || 'Failed to trigger synchronization.');
+      setActionError(extractErrorMessage(err, 'Failed to trigger synchronization.'));
     }
   };
 
@@ -134,13 +134,13 @@ export function IntegrationsPage() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Main Gmail Configuration Card */}
         <div className="lg:col-span-2 rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--surface))] p-6 space-y-6">
-          <div className="flex items-start justify-between pb-4 border-b border-[hsl(var(--border-subtle))]">
-            <div className="flex items-center gap-3.5">
-              <div className="p-3 bg-[hsl(var(--surface-2))] border border-[hsl(var(--border))] rounded-xl">
+          <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3 pb-4 border-b border-[hsl(var(--border-subtle))]">
+            <div className="flex items-start gap-3.5">
+              <div className="p-3 bg-[hsl(var(--surface-2))] border border-[hsl(var(--border))] rounded-xl shrink-0">
                 <Mail className="w-7 h-7 text-red-500" />
               </div>
               <div>
-                <h3 className="text-lg font-bold text-[hsl(var(--foreground))] flex items-center gap-2">
+                <h3 className="text-lg font-bold text-[hsl(var(--foreground))] flex items-center gap-2 flex-wrap">
                   Google Workspace (Gmail)
                   {isConnected ? (
                     <span className="flex items-center gap-1 text-[11px] font-semibold text-emerald-400 bg-emerald-500/15 border border-emerald-500/30 px-2 py-0.5 rounded-full">
@@ -160,7 +160,7 @@ export function IntegrationsPage() {
             </div>
 
             {isConnected && (
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 self-start sm:self-auto">
                 <button
                   onClick={handleToggleMonitoring}
                   disabled={updateConfigMutation.isPending}
@@ -282,7 +282,7 @@ export function IntegrationsPage() {
               </div>
 
               {/* Action Buttons Toolbar */}
-              <div className="pt-4 border-t border-[hsl(var(--border-subtle))] flex flex-wrap items-center justify-between gap-3">
+              <div className="pt-4 border-t border-[hsl(var(--border-subtle))] flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div className="text-xs text-[hsl(var(--foreground-subtle))] font-mono">
                   {connection.last_sync_at ? (
                     <span>Last synchronized: {new Date(connection.last_sync_at).toLocaleString()}</span>
@@ -291,7 +291,7 @@ export function IntegrationsPage() {
                   )}
                 </div>
 
-                <div className="flex items-center gap-2.5">
+                <div className="flex items-center gap-2.5 flex-wrap">
                   <button
                     onClick={handleSyncNow}
                     disabled={syncMutation.isPending}

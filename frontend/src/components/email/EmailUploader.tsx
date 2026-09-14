@@ -2,7 +2,7 @@
 
 import { useCallback, useState } from 'react';
 import { Upload, FileText, X, AlertCircle, CheckCircle2, Sparkles, Play } from 'lucide-react';
-import { cn, formatFileSize } from '@/utils';
+import { cn, formatFileSize, extractErrorMessage } from '@/utils';
 import { useUploadEmail } from '@/api/hooks';
 import { useNotificationStore } from '@/store';
 
@@ -97,7 +97,7 @@ export function EmailUploader({ onSuccess }: EmailUploaderProps) {
       notify({
         type: 'error',
         title: 'Upload failed',
-        description: err?.response?.data?.detail || err?.message || 'Could not submit email for analysis',
+        description: extractErrorMessage(err, 'Could not submit email for analysis'),
       });
     }
   };

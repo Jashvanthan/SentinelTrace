@@ -27,6 +27,7 @@ from app.api.v1.ip_trace import router as ip_trace_router
 from app.api.v1.investigation import router as investigation_router
 from app.api.v1.investigations import router as investigations_router
 from app.api.v1.reports import router as investigation_reports_router
+from app.api.v1.support import router as support_router
 from app.core.config import get_settings
 from app.core.logging import RequestLoggingMiddleware, configure_logging, get_logger
 
@@ -148,6 +149,7 @@ def create_app() -> FastAPI:
     app.include_router(investigation_router, prefix=API_PREFIX)
     app.include_router(investigations_router, prefix=API_PREFIX)
     app.include_router(investigation_reports_router, prefix=API_PREFIX)
+    app.include_router(support_router, prefix=API_PREFIX)
 
     # Alias route for /api/v1/analyses/{analysis_id}/ip-trace
     app.include_router(ip_trace_router, prefix=f"{API_PREFIX}/analyses")

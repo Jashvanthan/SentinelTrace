@@ -9,7 +9,7 @@ import {
 import { useThreatIntelligence, useWorkspaceStats } from '@/api/hooks';
 import { useWorkspaceStore } from '@/store/workspace';
 import apiClient from '@/lib/api';
-import { cn } from '@/utils';
+import { cn, extractErrorMessage } from '@/utils';
 import type { IOCResponse, EnrichmentResponse, GeoLocationResponse } from '@/types';
 
 type IndicatorType = 'ip' | 'domain' | 'url' | 'hash';
@@ -102,7 +102,7 @@ export function ThreatIntelPage() {
         }
       }
     } catch (err: any) {
-      setLiveError(err?.response?.data?.detail || 'Failed to enrich indicator. Please check the value and try again.');
+      setLiveError(extractErrorMessage(err, 'Failed to enrich indicator. Please check the value and try again.'));
     } finally {
       setIsEnriching(false);
     }

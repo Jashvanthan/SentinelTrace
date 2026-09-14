@@ -358,10 +358,17 @@ async def google_oauth_callback(
     except HTTPException as e:
         await db.rollback()
         error_code = "google_auth_failed"
+        email_param = ""
         if e.status_code == 409:
             error_code = "account_exists"
+            try:
+                if 'id_info' in locals() and isinstance(id_info, dict) and id_info.get("email"):
+                    import urllib.parse
+                    email_param = f"&email={urllib.parse.quote(id_info.get('email', ''))}"
+            except Exception:
+                pass
         return RedirectResponse(
-            url=f"{frontend_url}/login?error={error_code}",
+            url=f"{frontend_url}/login?error={error_code}{email_param}",
             status_code=status.HTTP_302_FOUND,
         )
     except Exception as e:

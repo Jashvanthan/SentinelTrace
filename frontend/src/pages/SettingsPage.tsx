@@ -4,7 +4,7 @@ import { useAuthStore } from '@/store';
 import { useWorkspaceStore } from '@/store/workspace';
 import { useWorkspaces } from '@/api/workspaces';
 import { Shield, User, Users, Mail, AlertTriangle, Loader2, CheckCircle, XCircle, Trash2, Plus, ExternalLink, Upload, CreditCard, Sparkles, Check, AlertCircle, Info, X } from 'lucide-react';
-import { cn } from '@/utils';
+import { cn, extractErrorMessage } from '@/utils';
 import { integrationsApi, useGmailConnection, useSyncGmail, useUpdateGmailConfig } from '@/api/integrations';
 
 type TabId = 'general' | 'members' | 'integrations' | 'billing';
@@ -439,7 +439,7 @@ function AddMemberModal({ onShowPop }: { onShowPop: (msg: PopNotification) => vo
         onShowPop({ type: 'success', text: `Member ${email} added successfully.` });
       },
       onError: (err: any) => {
-        onShowPop({ type: 'error', text: err.response?.data?.detail || "Failed to add member." });
+        onShowPop({ type: 'error', text: extractErrorMessage(err, "Failed to add member.") });
       }
     });
   };
@@ -518,7 +518,7 @@ function IntegrationsSettings({ onShowPop }: { onShowPop: (msg: PopNotification)
         window.location.href = url;
       }
     } catch (err: any) {
-      onShowPop({ type: 'error', text: err.response?.data?.detail || 'Failed to initiate Gmail connection.' });
+      onShowPop({ type: 'error', text: extractErrorMessage(err, 'Failed to initiate Gmail connection.') });
     } finally {
       setIsConnecting(false);
     }
@@ -533,7 +533,7 @@ function IntegrationsSettings({ onShowPop }: { onShowPop: (msg: PopNotification)
       onShowPop({ type: 'info', text: 'Gmail integration disconnected.' });
       window.location.reload();
     } catch (err: any) {
-      onShowPop({ type: 'error', text: err.response?.data?.detail || 'Failed to disconnect integration.' });
+      onShowPop({ type: 'error', text: extractErrorMessage(err, 'Failed to disconnect integration.') });
     } finally {
       setIsDisconnecting(false);
     }
@@ -549,7 +549,7 @@ function IntegrationsSettings({ onShowPop }: { onShowPop: (msg: PopNotification)
         text: `Gmail continuous monitoring set to ${nextState ? 'ENABLED (ON)' : 'PAUSED (OFF)'}.`,
       });
     } catch (err: any) {
-      onShowPop({ type: 'error', text: err.response?.data?.detail || 'Failed to update monitoring setting.' });
+      onShowPop({ type: 'error', text: extractErrorMessage(err, 'Failed to update monitoring setting.') });
     }
   };
 
@@ -562,7 +562,7 @@ function IntegrationsSettings({ onShowPop }: { onShowPop: (msg: PopNotification)
         text: `Analysis mode updated to: ${mode === 'AUTO' ? 'Automatically Analyze New Emails' : 'Fetch Emails for Manual Analysis'}.`,
       });
     } catch (err: any) {
-      onShowPop({ type: 'error', text: err.response?.data?.detail || 'Failed to update analysis mode.' });
+      onShowPop({ type: 'error', text: extractErrorMessage(err, 'Failed to update analysis mode.') });
     }
   };
 
@@ -695,13 +695,13 @@ function IntegrationsSettings({ onShowPop }: { onShowPop: (msg: PopNotification)
               </div>
 
               {/* Action Toolbar */}
-              <div className="pt-4 border-t border-[hsl(var(--border))] flex items-center justify-between gap-3">
+              <div className="pt-4 border-t border-[hsl(var(--border))] flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div className="text-xs text-[hsl(var(--foreground-subtle))] font-mono">
                   {gmail?.last_sync_at ? `Last sync: ${new Date(gmail.last_sync_at).toLocaleString()}` : 'Never synced'}
                 </div>
 
                 {canManage && (
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 flex-wrap">
                     <button 
                       onClick={handleDisconnect}
                       disabled={isDisconnecting}

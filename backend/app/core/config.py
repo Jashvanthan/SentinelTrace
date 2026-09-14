@@ -107,9 +107,26 @@ class Settings(BaseSettings):
     # ── Encryption ───────────────────────────────────────────────────────────
     FILE_ENCRYPTION_KEY: str = Field("", min_length=0)
 
+    # ── SMTP (Free Gmail SMTP & Custom HTML Emails) ──────────────────────────
+    SMTP_HOST: str = "smtp.gmail.com"
+    SMTP_PORT: int = 465
+    SMTP_USER: str = ""
+    SMTP_PASSWORD: str = ""
+    SMTP_FROM_NAME: str = "SentinelTrace SOC Alert Desk"
+    SUPPORT_RECEIVER_EMAIL: str = "jashvan467@gmail.com"
+
     # ── Rate Limiting ────────────────────────────────────────────────────────
     RATE_LIMIT_PER_MINUTE: int = 60
     RATE_LIMIT_BURST: int = 10
+
+    # ── SMTP / Email Service ───────────────────────────────────────────────────
+    SMTP_HOST: str = "smtp.gmail.com"
+    SMTP_PORT: int = 465
+    SMTP_USER: str = ""
+    SMTP_PASSWORD: str = ""
+    SMTP_FROM_EMAIL: str = ""
+    SMTP_FROM_NAME: str = "SentinelTrace SOC Alert Desk"
+    SUPPORT_RECEIVER_EMAIL: str = "jashvan467@gmail.com"
 
     # ── Logging ──────────────────────────────────────────────────────────────
     LOG_LEVEL: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = "INFO"

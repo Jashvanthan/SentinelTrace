@@ -129,3 +129,35 @@ export function getIOCTypeLabel(iocType: string): string {
   };
   return labels[iocType] || iocType;
 }
+
+/**
+ * Safely extracts a displayable string from any error object, including
+ * FastAPI Pydantic 422 error structures ({ type, loc, msg, input, ctx }).
+ */
+export function extractErrorMessage(err: unknown, defaultMessage = 'An unexpected error occurred'): string {
+  if (!err) return defaultMessage;
+  if (typeof err === 'string') return err;
+  const anyErr = err as any;
+  const detail = anyErr?.response?.data?.detail ?? anyErr?.detail;
+  if (typeof detail === 'string') return detail;
+  if (Array.isArray(detail)) {
+    return detail
+      .map((item) => {
+        if (typeof item === 'string') return item;
+        if (item?.msg) {
+          const loc = Array.isArray(item.loc) ? item.loc.slice(1).join('.') : '';
+          return loc ? `${loc}: ${item.msg}` : item.msg;
+        }
+        return JSON.stringify(item);
+      })
+      .join('; ');
+  }
+  if (detail && typeof detail === 'object') {
+    return detail.msg || detail.message || JSON.stringify(detail);
+  }
+  if (anyErr?.message && typeof anyErr.message === 'string') {
+    return anyErr.message;
+  }
+  return defaultMessage;
+}
+
