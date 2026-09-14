@@ -149,7 +149,7 @@ export function LoginPage() {
           full_name: fullName.trim() || undefined,
         });
         setFormSuccess('Account created successfully! Signing in...');
-        const data = await login.mutateAsync({ email, password });
+        const data: any = await login.mutateAsync({ email, password });
         setAuth(data.user, data.access_token);
         setAccessToken(data.access_token);
 

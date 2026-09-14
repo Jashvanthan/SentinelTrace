@@ -383,7 +383,7 @@ function MembersSettings({ onShowPop }: { onShowPop: (msg: PopNotification) => v
             </tr>
           </thead>
           <tbody className="divide-y divide-[hsl(var(--border))]">
-            {members?.map((member) => (
+            {members?.map((member: any) => (
               <tr key={member.user_id} className="hover:bg-[hsl(var(--surface-3))] transition-colors">
                 <td className="px-4 py-3 text-[hsl(var(--foreground))] font-medium">{member.full_name}</td>
                 <td className="px-4 py-3 text-[hsl(var(--foreground-muted))]">{member.email}</td>

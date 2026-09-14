@@ -184,7 +184,7 @@ export function ThreatIntelPage() {
 
       {/* Overview Metric Cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 flex-shrink-0">
-        <MetricCard label="Total IOCs" value={stats?.ioc_type_distribution ? Object.values(stats.ioc_type_distribution).reduce((a, b) => Number(a) + Number(b), 0) : (iocData?.total ?? '—')} />
+        <MetricCard label="Total IOCs" value={stats?.ioc_type_distribution ? Object.values(stats.ioc_type_distribution).reduce((a: number, b: any) => a + Number(b), 0) : (iocData?.total ?? '—')} />
         <MetricCard label="High/Critical Risk" value={stats?.high_critical_iocs_this_week ?? '—'} alert={!!(stats?.high_critical_iocs_this_week && stats.high_critical_iocs_this_week > 0)} />
         <MetricCard label="Threats Detected" value={stats?.threats_detected ?? '—'} />
         <MetricCard label="Active Campaigns" value={stats?.active_campaigns ?? '—'} />

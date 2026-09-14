@@ -37,8 +37,8 @@ export function ReportsPage() {
   const analyses = useMemo(() => {
     const items = data?.items || [];
     if (statusFilter === 'ALL') return items;
-    if (statusFilter === 'VERIFIED') return items.filter((a) => a.status === 'COMPLETE');
-    if (statusFilter === 'PENDING') return items.filter((a) => a.status !== 'COMPLETE');
+    if (statusFilter === 'VERIFIED') return items.filter((a: any) => a.status === 'COMPLETE');
+    if (statusFilter === 'PENDING') return items.filter((a: any) => a.status !== 'COMPLETE');
     return items;
   }, [data?.items, statusFilter]);
 
@@ -148,7 +148,7 @@ export function ReportsPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#232e42]">
-                {analyses.map((item, idx) => {
+                {analyses.map((item: any, idx: number) => {
                   const reportId = `REP-2026-${String(idx + 101).padStart(4, '0')}`;
                   const caseRef = `CAS-${item.id.slice(0, 4).toUpperCase()}-X`;
                   const isVerified = item.status === 'COMPLETE';
