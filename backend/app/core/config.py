@@ -44,13 +44,14 @@ class Settings(BaseSettings):
     @field_validator("DATABASE_URL", mode="before")
     @classmethod
     def assemble_db_url(cls, v: str | None) -> str:
-        if not v:
+        if not v or "://" not in str(v) or "your_postgresql" in str(v) or "placeholder" in str(v):
             return "sqlite+aiosqlite:///./sentineltrace.db"
-        if v.startswith("postgres://"):
-            return v.replace("postgres://", "postgresql+asyncpg://", 1)
-        if v.startswith("postgresql://") and not v.startswith("postgresql+asyncpg://"):
-            return v.replace("postgresql://", "postgresql+asyncpg://", 1)
-        return v
+        v_str = str(v).strip().strip("'\"")
+        if v_str.startswith("postgres://"):
+            return v_str.replace("postgres://", "postgresql+asyncpg://", 1)
+        if v_str.startswith("postgresql://") and not v_str.startswith("postgresql+asyncpg://"):
+            return v_str.replace("postgresql://", "postgresql+asyncpg://", 1)
+        return v_str
 
     # ── Neo4j ────────────────────────────────────────────────────────────────
     NEO4J_URI: str = "bolt://localhost:7687"
