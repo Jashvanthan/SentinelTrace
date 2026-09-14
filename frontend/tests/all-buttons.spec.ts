@@ -49,7 +49,7 @@ test.describe('Comprehensive Functional and Non-Functional Buttons Test Suite', 
     const operationalRoutes = [
       { name: 'Geolocation', urlPattern: /.*\/geo/, heading: /Infrastructure Geolocation/i },
       { name: 'Reports', urlPattern: /.*\/reports/, heading: /Forensic Reports/i },
-      { name: 'Activity Log', urlPattern: /.*\/activity/, heading: /Activity Log/i },
+      { name: 'Activity Log', urlPattern: /.*\/activity/, heading: /Security & Activity Log/i },
     ];
 
     for (const route of operationalRoutes) {

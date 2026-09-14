@@ -54,8 +54,8 @@ class IOC(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     threat_score: Mapped[int | None] = mapped_column(Integer, nullable=True)
     tags: Mapped[list | None] = mapped_column(JSONB, nullable=True)
     enrichment_data: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
-    first_seen_at: Mapped[str | None] = mapped_column(nullable=True)
-    last_seen_at: Mapped[str | None] = mapped_column(nullable=True)
+    first_seen_at: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    last_seen_at: Mapped[str | None] = mapped_column(String(128), nullable=True)
     source: Mapped[str | None] = mapped_column(String(128), nullable=True)
 
     analysis: Mapped["EmailAnalysis"] = relationship(  # noqa: F821
