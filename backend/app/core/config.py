@@ -25,7 +25,7 @@ class Settings(BaseSettings):
     APP_NAME: str = "SentinelTrace"
     APP_ENV: Literal["development", "staging", "production"] = "development"
     APP_DEBUG: bool = False
-    APP_SECRET_KEY: str = Field(..., min_length=32)
+    APP_SECRET_KEY: str = Field("sentineltrace-default-super-secure-secret-key-32chars", min_length=32)
     ALLOWED_ORIGINS: str | list[str] = ["http://localhost:5173", "http://127.0.0.1:5173"]
     FRONTEND_URL: str = "http://localhost:5173"
 
@@ -37,21 +37,32 @@ class Settings(BaseSettings):
         return v
 
     # ── Database ─────────────────────────────────────────────────────────────
-    DATABASE_URL: str
+    DATABASE_URL: str = "sqlite+aiosqlite:///./sentineltrace.db"
     DATABASE_POOL_SIZE: int = 10
     DATABASE_MAX_OVERFLOW: int = 20
+
+    @field_validator("DATABASE_URL", mode="before")
+    @classmethod
+    def assemble_db_url(cls, v: str | None) -> str:
+        if not v:
+            return "sqlite+aiosqlite:///./sentineltrace.db"
+        if v.startswith("postgres://"):
+            return v.replace("postgres://", "postgresql+asyncpg://", 1)
+        if v.startswith("postgresql://") and not v.startswith("postgresql+asyncpg://"):
+            return v.replace("postgresql://", "postgresql+asyncpg://", 1)
+        return v
 
     # ── Neo4j ────────────────────────────────────────────────────────────────
     NEO4J_URI: str = "bolt://localhost:7687"
     NEO4J_USERNAME: str = "neo4j"
-    NEO4J_PASSWORD: str = Field(..., min_length=8)
+    NEO4J_PASSWORD: str = ""
     NEO4J_DATABASE: str = "neo4j"
 
     # ── Redis ────────────────────────────────────────────────────────────────
     REDIS_URL: str = "redis://localhost:6379/0"
 
     # ── JWT ──────────────────────────────────────────────────────────────────
-    JWT_SECRET: str = Field(..., min_length=32)
+    JWT_SECRET: str = Field("sentineltrace-jwt-secret-key-must-be-32-chars-long", min_length=32)
     JWT_ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 15
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
@@ -67,7 +78,7 @@ class Settings(BaseSettings):
     GMAIL_CLIENT_SECRET: str = ""
     GMAIL_REDIRECT_URI: str = "http://localhost:8000/api/v1/integrations/gmail/callback"
     GMAIL_SCOPES: str = "https://www.googleapis.com/auth/gmail.readonly openid https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/userinfo.profile"
-    GMAIL_ENCRYPTION_KEY: str = Field("", min_length=43) # 32 bytes base64 encoded for Fernet
+    GMAIL_ENCRYPTION_KEY: str = ""
 
     # ── Gmail API ────────────────────────────────────────────────────────────
     GMAIL_SERVICE_ACCOUNT_JSON: str = ""
