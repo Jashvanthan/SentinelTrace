@@ -2,12 +2,26 @@
 
 import axios, { AxiosError, type InternalAxiosRequestConfig } from 'axios';
 
-const RAW_BASE_URL =
+const isBrowser = typeof window !== 'undefined';
+const isLocalhost = isBrowser && (
+  window.location.hostname === 'localhost' ||
+  window.location.hostname === '127.0.0.1' ||
+  window.location.hostname.includes('192.168.')
+);
+
+const RENDER_BACKEND_URL = 'https://sentineltrace-e9td.onrender.com/api/v1';
+
+let rawBaseUrl =
   (import.meta as any).env?.VITE_API_BASE_URL ||
   (import.meta as any).env?.VITE_API_URL ||
   'http://localhost:8000/api/v1';
 
-const BASE_URL = RAW_BASE_URL.replace(/\/+$/, '');
+// If running in browser on non-localhost domain (e.g. *.vercel.app) and the URL points to localhost, auto-route to Render
+if (isBrowser && !isLocalhost && (rawBaseUrl.includes('localhost') || rawBaseUrl.includes('127.0.0.1'))) {
+  rawBaseUrl = RENDER_BACKEND_URL;
+}
+
+export const BASE_URL = rawBaseUrl.replace(/\/+$/, '');
 
 
 export const apiClient = axios.create({
