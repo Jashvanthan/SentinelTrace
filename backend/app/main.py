@@ -47,6 +47,17 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         version="0.1.0",
     )
 
+    # Initialize Database tables
+    try:
+        from app.db.session import engine
+        from app.db.base import Base
+        import app.models  # noqa: F401
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+        logger.info("database_tables_ready")
+    except Exception as e:
+        logger.warning("database_tables_init_error", error=str(e))
+
     # Initialize Neo4j constraints
     try:
         from app.services.neo4j_service import get_neo4j_service
