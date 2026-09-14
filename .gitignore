@@ -17,8 +17,10 @@ wheels/
 *.egg-link
 .eggs/
 .installed.cfg
-lib/
-lib64/
+/lib/
+/lib64/
+!frontend/src/lib/
+!frontend/src/lib/**
 MANIFEST
 
 # Virtual environments

@@ -132,7 +132,7 @@ export function LoginPage() {
 
     if (mode === 'login') {
       try {
-        const data = await login.mutateAsync({ email, password });
+        const data: any = await login.mutateAsync({ email, password });
         setAuth(data.user, data.access_token);
         setAccessToken(data.access_token);
         navigate(from, { replace: true });
