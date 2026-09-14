@@ -147,6 +147,8 @@ reports/
 !package-lock.json
 !tsconfig*.json
 !components.json
+!vercel.json
+!**/vercel.json
 !**/fixtures/*.json
 !**/mocks/*.json
 
