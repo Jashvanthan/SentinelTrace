@@ -138,6 +138,9 @@ export function extractErrorMessage(err: unknown, defaultMessage = 'An unexpecte
   if (!err) return defaultMessage;
   if (typeof err === 'string') return err;
   const anyErr = err as any;
+  if (anyErr?.code === 'ERR_NETWORK' || anyErr?.message === 'Network Error' || anyErr?.message === 'Failed to fetch') {
+    return 'Unable to connect to the SentinelTrace API server. Please verify the backend is running or check your VITE_API_BASE_URL configuration.';
+  }
   const detail = anyErr?.response?.data?.detail ?? anyErr?.detail;
   if (typeof detail === 'string') return detail;
   if (Array.isArray(detail)) {
