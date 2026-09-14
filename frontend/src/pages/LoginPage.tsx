@@ -3,7 +3,7 @@
 
 import { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { Shield, Eye, EyeOff, ExternalLink, UserPlus, LogIn, AlertCircle, CheckCircle2, Loader2, Mail } from 'lucide-react';
+import { Shield, Eye, EyeOff, ExternalLink, UserPlus, LogIn, AlertCircle, CheckCircle2, Loader2, Mail, Sparkles } from 'lucide-react';
 import { useLogin, useRegister } from '@/api/hooks';
 import { useAuthStore, useNotificationStore } from '@/store';
 import apiClient, { setAccessToken } from '@/lib/api';
@@ -189,7 +189,8 @@ export function LoginPage() {
     try {
       setIsGoogleLoading(true);
       setFormError(null);
-      const apiUrl = (import.meta as any).env?.VITE_API_BASE_URL || (import.meta as any).env?.VITE_API_URL || 'http://localhost:8000/api/v1';
+      const rawApiUrl = (import.meta as any).env?.VITE_API_BASE_URL || (import.meta as any).env?.VITE_API_URL || 'http://localhost:8000/api/v1';
+      const apiUrl = rawApiUrl.replace(/\/+$/, '');
       const intent = mode === 'register' ? 'register' : 'login';
       const response = await fetch(`${apiUrl}/auth/google?intent=${intent}`, {
         credentials: 'include',
@@ -214,7 +215,8 @@ export function LoginPage() {
     try {
       setIsCompletingGoogleReg(true);
       setFormError(null);
-      const apiUrl = (import.meta as any).env?.VITE_API_BASE_URL || (import.meta as any).env?.VITE_API_URL || 'http://localhost:8000/api/v1';
+      const rawApiUrl = (import.meta as any).env?.VITE_API_BASE_URL || (import.meta as any).env?.VITE_API_URL || 'http://localhost:8000/api/v1';
+      const apiUrl = rawApiUrl.replace(/\/+$/, '');
       const res = await fetch(`${apiUrl}/auth/google/complete-registration`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -414,6 +416,46 @@ export function LoginPage() {
           {/* Email/Password Form — hidden when google pending is active */}
           {!googlePending && (
             <form onSubmit={handleSubmit} className="space-y-4">
+              {/* Demo Accounts Quick-Fill (Login mode only) */}
+              {mode === 'login' && (
+                <div className="p-3 rounded-lg bg-[hsl(var(--surface-2))] border border-[hsl(var(--border))] space-y-2">
+                  <div className="flex items-center justify-between text-xs text-[hsl(var(--foreground-muted))]">
+                    <span className="font-semibold flex items-center gap-1.5 text-[hsl(var(--accent))]">
+                      <Sparkles className="w-3.5 h-3.5" /> Quick Demo Accounts
+                    </span>
+                    <span className="text-[10px] text-[hsl(var(--foreground-subtle))]">Click to auto-fill</span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEmail('qa_tester@sentineltrace.io');
+                        setPassword('SentinelQAPass123!');
+                        setFormError(null);
+                        setFormSuccess('Filled QA Analyst credentials.');
+                      }}
+                      className="p-2 rounded text-xs font-medium bg-[hsl(var(--surface-1))] hover:bg-[hsl(var(--accent)/0.12)] hover:border-[hsl(var(--accent)/0.4)] border border-[hsl(var(--border))] transition-all text-left flex flex-col group cursor-pointer"
+                    >
+                      <span className="font-semibold text-[hsl(var(--foreground))] group-hover:text-[hsl(var(--accent))]">QA Analyst</span>
+                      <span className="text-[10px] text-[hsl(var(--foreground-subtle))] truncate">qa_tester@sentineltrace.io</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEmail('admin@sentineltrace.io');
+                        setPassword('SentinelAdmin2024!');
+                        setFormError(null);
+                        setFormSuccess('Filled SOC Admin credentials.');
+                      }}
+                      className="p-2 rounded text-xs font-medium bg-[hsl(var(--surface-1))] hover:bg-[hsl(var(--accent)/0.12)] hover:border-[hsl(var(--accent)/0.4)] border border-[hsl(var(--border))] transition-all text-left flex flex-col group cursor-pointer"
+                    >
+                      <span className="font-semibold text-[hsl(var(--foreground))] group-hover:text-[hsl(var(--accent))]">SOC Admin</span>
+                      <span className="text-[10px] text-[hsl(var(--foreground-subtle))] truncate">admin@sentineltrace.io</span>
+                    </button>
+                  </div>
+                </div>
+              )}
+
               {/* Full Name (Registration only) */}
               {mode === 'register' && (
                 <div>
