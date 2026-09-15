@@ -195,6 +195,26 @@ def _get_google_redirect_uri(request: Request) -> str:
     return settings.GOOGLE_REDIRECT_URI or "http://localhost:8000/api/v1/auth/google/callback"
 
 
+def _get_frontend_url(request: Request) -> str:
+    """Resolve live frontend URL dynamically."""
+    settings = get_settings()
+    if settings.FRONTEND_URL and "localhost" not in settings.FRONTEND_URL and "127.0.0.1" not in settings.FRONTEND_URL:
+        return settings.FRONTEND_URL.rstrip("/")
+    origin = request.headers.get("origin")
+    if origin and "localhost" not in origin and "127.0.0.1" not in origin:
+        return origin.rstrip("/")
+    referer = request.headers.get("referer")
+    if referer:
+        from urllib.parse import urlparse
+        p = urlparse(referer)
+        if p.scheme and p.netloc and "localhost" not in p.netloc and "127.0.0.1" not in p.netloc:
+            return f"{p.scheme}://{p.netloc}".rstrip("/")
+    host = request.headers.get("x-forwarded-host") or request.url.netloc or ""
+    if "onrender.com" in host or settings.APP_ENV == "production" or settings.is_production:
+        return "https://sentinel-trace-two.vercel.app"
+    return settings.FRONTEND_URL or "http://localhost:5173"
+
+
 @router.get("/google", response_model=GoogleOAuthURLResponse)
 async def google_oauth_start(
     db: DbSession,
@@ -231,6 +251,9 @@ async def google_oauth_start(
         parsed = urlparse(request.headers.get("referer"))
         if parsed.scheme and parsed.netloc:
             req_origin = f"{parsed.scheme}://{parsed.netloc}"
+
+    if not req_origin:
+        req_origin = _get_frontend_url(request)
 
     state_nonce = secrets.token_urlsafe(32)
     stored_nonce_payload = f"{intent}|{req_origin}|{secrets.token_urlsafe(16)}"
@@ -295,7 +318,7 @@ async def google_oauth_callback(
     - If unknown identity + intent=login → redirect /login?error=google_not_registered
     - If unknown identity + intent=register → issue pending token → redirect /login?google_pending=<token>
     """
-    frontend_url = settings.FRONTEND_URL or "http://localhost:5173"
+    frontend_url = _get_frontend_url(request)
     import urllib.parse
     import logging
     logger = logging.getLogger("sentineltrace.auth")

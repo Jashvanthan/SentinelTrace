@@ -66,6 +66,44 @@ async def _resolve_oauth_user(request: Request, db: AsyncSession) -> User:
     return user
 
 
+def _get_gmail_redirect_uri(request: Request) -> str:
+    """Resolve Gmail OAuth redirect URI dynamically based on runtime host or configuration."""
+    settings = get_settings()
+    if settings.GMAIL_REDIRECT_URI and not settings.GMAIL_REDIRECT_URI.startswith("http://localhost"):
+        return settings.GMAIL_REDIRECT_URI
+
+    proto = request.headers.get("x-forwarded-proto") or request.url.scheme
+    host = request.headers.get("x-forwarded-host") or request.url.netloc
+
+    if "onrender.com" in host:
+        proto = "https"
+
+    if host and "localhost" not in host and "127.0.0.1" not in host:
+        return f"{proto}://{host}/api/v1/integrations/gmail/callback"
+
+    return settings.GMAIL_REDIRECT_URI or "http://localhost:8000/api/v1/integrations/gmail/callback"
+
+
+def _get_frontend_url(request: Request) -> str:
+    """Resolve live frontend URL dynamically."""
+    settings = get_settings()
+    if settings.FRONTEND_URL and "localhost" not in settings.FRONTEND_URL and "127.0.0.1" not in settings.FRONTEND_URL:
+        return settings.FRONTEND_URL.rstrip("/")
+    origin = request.headers.get("origin")
+    if origin and "localhost" not in origin and "127.0.0.1" not in origin:
+        return origin.rstrip("/")
+    referer = request.headers.get("referer")
+    if referer:
+        from urllib.parse import urlparse
+        p = urlparse(referer)
+        if p.scheme and p.netloc and "localhost" not in p.netloc and "127.0.0.1" not in p.netloc:
+            return f"{p.scheme}://{p.netloc}".rstrip("/")
+    host = request.headers.get("x-forwarded-host") or request.url.netloc or ""
+    if "onrender.com" in host or settings.APP_ENV == "production" or settings.is_production:
+        return "https://sentinel-trace-two.vercel.app"
+    return settings.FRONTEND_URL or "http://localhost:5173"
+
+
 @router.get("/workspaces/{workspace_id}/integrations/gmail/connect")
 async def connect_gmail(
     workspace_id: uuid.UUID,
@@ -107,7 +145,8 @@ async def connect_gmail(
     db.add(oauth_state)
     await db.commit()
 
-    auth_url, code_verifier = gmail_service.get_authorization_url(state=state_token)
+    gmail_redirect_uri = _get_gmail_redirect_uri(request)
+    auth_url, code_verifier = gmail_service.get_authorization_url(state=state_token, redirect_uri=gmail_redirect_uri)
 
     # Return JSON if client requested JSON or called via frontend API; otherwise RedirectResponse
     wants_json = "application/json" in request.headers.get("accept", "") or request.query_params.get("format") == "json"
@@ -149,15 +188,14 @@ async def gmail_callback(
     """
     Handle Google OAuth callback for Gmail.
     """
-    settings = get_settings()
-    frontend_url = settings.FRONTEND_URL or "http://localhost:5173"
+    frontend_url = _get_frontend_url(request)
 
     if error:
         logger.warning(f"Google OAuth returned error: {error}")
-        return RedirectResponse(f"{frontend_url}/integrations?error={error}")
+        return RedirectResponse(f"{frontend_url}/settings?error={error}")
 
     if not code:
-        return RedirectResponse(f"{frontend_url}/integrations?error=missing_code")
+        return RedirectResponse(f"{frontend_url}/settings?error=missing_code")
 
     # 1. Verify state in DB
     result = await db.execute(select(OAuthState).where(OAuthState.state == state))
@@ -165,12 +203,12 @@ async def gmail_callback(
 
     if not oauth_state:
         logger.warning("Gmail OAuth state not found in DB or already consumed")
-        return RedirectResponse(f"{frontend_url}/integrations?error=state_expired")
+        return RedirectResponse(f"{frontend_url}/settings?error=state_expired")
 
     if oauth_state.expires_at < datetime.now(timezone.utc):
         await db.delete(oauth_state)
         await db.commit()
-        return RedirectResponse(f"{frontend_url}/integrations?error=state_expired")
+        return RedirectResponse(f"{frontend_url}/settings?error=state_expired")
 
     # Unpack workspace_id, user_id, and raw_nonce
     try:
@@ -181,7 +219,7 @@ async def gmail_callback(
         logger.error(f"Failed to unpack OAuth state context: {e}")
         await db.delete(oauth_state)
         await db.commit()
-        return RedirectResponse(f"{frontend_url}/integrations?error=invalid_state_context")
+        return RedirectResponse(f"{frontend_url}/settings?error=invalid_state_context")
 
     # Verify cookie nonce if available
     cookie_nonce = request.cookies.get("st_gmail_oauth_nonce")
@@ -189,7 +227,7 @@ async def gmail_callback(
         logger.warning("Gmail OAuth nonce mismatch")
         await db.delete(oauth_state)
         await db.commit()
-        return RedirectResponse(f"{frontend_url}/integrations?error=nonce_mismatch")
+        return RedirectResponse(f"{frontend_url}/settings?error=nonce_mismatch")
 
     # Consume state
     await db.delete(oauth_state)
@@ -198,7 +236,12 @@ async def gmail_callback(
     try:
         # 3. Exchange code for credentials using PKCE code_verifier if present
         code_verifier = request.cookies.get("st_gmail_code_verifier")
-        creds_data = await gmail_service.exchange_code(code, code_verifier=code_verifier)
+        gmail_redirect_uri = _get_gmail_redirect_uri(request)
+        creds_data = await gmail_service.exchange_code(
+            code,
+            code_verifier=code_verifier,
+            redirect_uri=gmail_redirect_uri,
+        )
 
         # 4. Get email address
         import googleapiclient.discovery
@@ -282,14 +325,14 @@ async def gmail_callback(
         except Exception as sync_err:
             logger.warning(f"Could not auto-trigger initial Gmail sync: {sync_err}")
 
-        response = RedirectResponse(f"{frontend_url}/integrations?status=connected")
+        response = RedirectResponse(f"{frontend_url}/settings?status=connected")
         response.delete_cookie("st_gmail_oauth_nonce", path="/")
         response.delete_cookie("st_gmail_code_verifier", path="/")
         return response
 
     except Exception as e:
         logger.error(f"Gmail OAuth callback failed: {e}")
-        response = RedirectResponse(f"{frontend_url}/integrations?error=connection_failed")
+        response = RedirectResponse(f"{frontend_url}/settings?error=connection_failed")
         response.delete_cookie("st_gmail_oauth_nonce", path="/")
         response.delete_cookie("st_gmail_code_verifier", path="/")
         return response

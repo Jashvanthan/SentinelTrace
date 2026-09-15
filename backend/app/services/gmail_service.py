@@ -25,7 +25,7 @@ class GmailService:
         self.settings = get_settings()
         self.scopes = self.settings.GMAIL_SCOPES.split(" ")
 
-    def _get_flow(self, state: str | None = None) -> Flow:
+    def _get_flow(self, state: str | None = None, redirect_uri: str | None = None) -> Flow:
         client_config = {
             "web": {
                 "client_id": self.settings.GOOGLE_CLIENT_ID,
@@ -39,12 +39,12 @@ class GmailService:
             scopes=self.scopes,
             state=state,
         )
-        flow.redirect_uri = self.settings.GMAIL_REDIRECT_URI
+        flow.redirect_uri = redirect_uri or self.settings.GMAIL_REDIRECT_URI
         return flow
 
-    def get_authorization_url(self, state: str) -> tuple[str, str | None]:
+    def get_authorization_url(self, state: str, redirect_uri: str | None = None) -> tuple[str, str | None]:
         """Generate the authorization URL and PKCE code_verifier for Gmail."""
-        flow = self._get_flow(state=state)
+        flow = self._get_flow(state=state, redirect_uri=redirect_uri)
         auth_url, _ = flow.authorization_url(
             access_type="offline",
             include_granted_scopes="true",
@@ -52,10 +52,10 @@ class GmailService:
         )
         return auth_url, flow.code_verifier
 
-    async def exchange_code(self, code: str, code_verifier: str | None = None) -> dict:
+    async def exchange_code(self, code: str, code_verifier: str | None = None, redirect_uri: str | None = None) -> dict:
         """Exchange the OAuth authorization code for credentials."""
         def _exchange():
-            flow = self._get_flow()
+            flow = self._get_flow(redirect_uri=redirect_uri)
             if code_verifier:
                 flow.code_verifier = code_verifier
             flow.fetch_token(code=code)
