@@ -93,7 +93,7 @@ export function AppShell() {
               className="h-8 w-8 rounded object-cover border border-[#232e42]"
             />
             <div className="flex flex-col min-w-0">
-              <span className="font-bold text-white text-sm tracking-tight leading-none">
+              <span className="font-bold text-white text-lg tracking-tight leading-none">
                 SentinelTrace
               </span>
               <span className="text-[9px] uppercase font-medium tracking-wider text-[#64748b] mt-1 font-mono">
@@ -198,7 +198,7 @@ export function AppShell() {
           </div>
           {sidebarOpen && (
             <div className="flex flex-col min-w-0">
-              <span className="font-bold text-white text-sm tracking-tight leading-none">
+              <span className="font-bold text-white text-lg tracking-tight leading-none">
                 SentinelTrace
               </span>
               <span className="text-[10px] uppercase font-medium tracking-wider text-[#64748b] mt-1 font-mono">
@@ -282,8 +282,8 @@ export function AppShell() {
 
       {/* ── MAIN CONTENT AREA ─────────────────────────────────────────────── */}
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden bg-[#090d16]">
-        {/* Top Header Bar — Increased Mobile Height (h-16 / 64px) for touch ergonomics */}
-        <header className="flex items-center justify-between px-3.5 sm:px-4 md:px-6 h-16 md:h-14 border-b border-[#232e42] bg-[#0d121d] flex-shrink-0 gap-2.5">
+        {/* Top Header Bar — Increased Mobile Height (h-20 / 80px) for touch ergonomics */}
+        <header className="flex items-center justify-between px-3.5 sm:px-4 md:px-6 h-20 md:h-14 border-b border-[#232e42] bg-[#0d121d] flex-shrink-0 gap-2.5">
           {/* Mobile Hamburger + Branding */}
           <div className="flex items-center gap-2.5 md:hidden">
             <button
@@ -299,7 +299,7 @@ export function AppShell() {
               className="h-8 w-8 rounded object-cover border border-[#232e42] shadow-xs"
             />
             <div className="flex flex-col min-w-0">
-              <span className="font-bold text-white text-sm tracking-tight leading-none">
+              <span className="font-bold text-white text-lg tracking-tight leading-none">
                 SentinelTrace
               </span>
               <span className="text-[8px] uppercase font-semibold tracking-wider text-[#3b82f6] font-mono mt-0.5">
@@ -327,7 +327,9 @@ export function AppShell() {
 
           {/* Right Header Status & User Controls */}
           <div className="flex items-center gap-2 sm:gap-3 md:gap-4 ml-auto">
-            <WorkspaceSelector />
+            <div className="hidden sm:block">
+              <WorkspaceSelector />
+            </div>
 
             <div className="hidden md:block h-4 w-px bg-[#232e42]" />
 

@@ -319,13 +319,15 @@ export function EmailAnalysisPage() {
                             </Link>
                           )}
 
-                          <Link
-                            to={`/geo?analysis_id=${encodeURIComponent(analysis.id)}`}
-                            className="p-1.5 rounded hover:bg-[hsl(var(--surface-3))] text-[hsl(var(--foreground-subtle))] hover:text-emerald-400 transition-colors"
-                            title="Geolocate Originating IP & Hops"
-                          >
-                            <MapPin className="w-3.5 h-3.5" />
-                          </Link>
+                          {!isPending && (
+                            <Link
+                              to={`/geo?analysis_id=${encodeURIComponent(analysis.id)}`}
+                              className="p-1.5 rounded hover:bg-[hsl(var(--surface-3))] text-[hsl(var(--foreground-subtle))] hover:text-emerald-400 transition-colors"
+                              title="Geolocate Originating IP & Hops"
+                            >
+                              <MapPin className="w-3.5 h-3.5" />
+                            </Link>
+                          )}
 
                           <button
                             onClick={() => setAnalysisToDelete(analysis)}

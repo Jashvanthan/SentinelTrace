@@ -17,6 +17,7 @@ export function IntegrationsPage() {
   const [searchParams] = useSearchParams();
   const [isConnecting, setIsConnecting] = useState(false);
   const [isDisconnecting, setIsDisconnecting] = useState(false);
+  const [isDisconnectModalOpen, setIsDisconnectModalOpen] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const [syncFeedback, setSyncFeedback] = useState<string | null>(null);
 
@@ -50,9 +51,12 @@ export function IntegrationsPage() {
     }
   };
 
-  const handleDisconnect = async () => {
+  const handleDisconnectRequest = () => {
+    setIsDisconnectModalOpen(true);
+  };
+
+  const handleDisconnectConfirm = async () => {
     if (!currentWorkspaceId) return;
-    if (!window.confirm('Are you sure you want to disconnect Gmail? This will revoke access tokens.')) return;
     try {
       setIsDisconnecting(true);
       setActionError(null);
@@ -61,6 +65,7 @@ export function IntegrationsPage() {
     } catch (err: any) {
       setActionError(extractErrorMessage(err, 'Failed to disconnect Gmail.'));
       setIsDisconnecting(false);
+      setIsDisconnectModalOpen(false);
     }
   };
 
@@ -109,6 +114,33 @@ export function IntegrationsPage() {
           Configure mail server integrations, monitoring behavior, and threat analysis modes.
         </p>
       </div>
+
+      {/* Disconnect Modal */}
+      {isDisconnectModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+          <div className="bg-[#121824] border border-[#232e42] rounded-lg p-6 max-w-sm w-full shadow-2xl">
+            <h3 className="text-lg font-bold text-white mb-2">Disconnect Gmail</h3>
+            <p className="text-sm text-[#94a3b8] mb-6">Are you sure you want to disconnect Gmail? This will revoke access tokens and stop all active monitoring for this workspace.</p>
+            <div className="flex justify-end gap-3">
+              <button
+                onClick={() => setIsDisconnectModalOpen(false)}
+                className="px-4 py-2 text-sm font-semibold text-white bg-[#161c2b] hover:bg-[#1f2a3e] border border-[#232e42] rounded-md transition-colors cursor-pointer"
+                disabled={isDisconnecting}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleDisconnectConfirm}
+                className="px-4 py-2 text-sm font-semibold text-white bg-red-600 hover:bg-red-500 rounded-md transition-colors cursor-pointer flex items-center gap-2"
+                disabled={isDisconnecting}
+              >
+                {isDisconnecting ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                Disconnect
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {statusParam === 'connected' && (
         <div className="p-4 rounded-lg bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-sm flex items-center gap-3">
@@ -310,7 +342,7 @@ export function IntegrationsPage() {
                   </button>
 
                   <button
-                    onClick={handleDisconnect}
+                    onClick={handleDisconnectRequest}
                     disabled={isDisconnecting}
                     className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-red-400 bg-red-950/30 hover:bg-red-950/60 border border-red-800/40 rounded-md transition-colors disabled:opacity-50 cursor-pointer"
                     title="Revoke and remove connection"

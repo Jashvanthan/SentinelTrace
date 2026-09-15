@@ -486,6 +486,17 @@ export function CampaignGraphPage() {
             </div>
           </div>
 
+          {/* Mobile Scroll Down Overlay Button */}
+          <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-10 lg:hidden">
+            <button
+              onClick={() => window.scrollBy({ top: window.innerHeight * 0.5, behavior: 'smooth' })}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-[#121824]/90 backdrop-blur border border-[#232e42] rounded-full text-xs font-mono text-white shadow-lg shadow-black/50 cursor-pointer hover:bg-[#161c2b] transition-colors"
+            >
+              <ChevronDown className="w-3.5 h-3.5" />
+              Scroll Details
+            </button>
+          </div>
+
           {/* Canvas Render — Empty State or Interactive Force Graph */}
           {isLoading ? (
             <div className="flex flex-col items-center justify-center h-full gap-3 text-center p-6">
