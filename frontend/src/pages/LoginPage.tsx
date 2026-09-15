@@ -131,8 +131,11 @@ export function LoginPage() {
     // ── Case 5: Generic Google auth failure ──
     if (params.has('error')) {
       const errorType = params.get('error');
+      const detail = params.get('detail') || params.get('reason');
       let msg = 'Google authentication could not be completed. Please try again.';
-      if (errorType === 'cookie_missing') {
+      if (detail) {
+        msg = `Google authentication failed: ${decodeURIComponent(detail)}`;
+      } else if (errorType === 'cookie_missing') {
         msg = 'OAuth session cookie missing. Please enable cookies and try again.';
       }
       setFormError(msg);

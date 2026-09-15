@@ -463,11 +463,11 @@ async def login_google_user(
             user=UserResponse.model_validate(user),
         )
 
-    # Step 2: No ExternalIdentity. Check email collision with LOCAL or existing accounts.
+    # Step 2: No ExternalIdentity. Check email collision with existing accounts.
     existing_user = await db.scalar(select(User).where(User.email == email))
     if existing_user:
-        if existing_user.auth_provider == AuthProvider.LOCAL or intent == "register":
-            # ── CASE B: Email exists as LOCAL account or intent is register → block ──
+        if intent == "register":
+            # Trying to register an account that already exists
             await write_audit_log(
                 db, action="GOOGLE_ACCOUNT_COLLISION",
                 user_id=existing_user.id,
@@ -479,9 +479,13 @@ async def login_google_user(
                 status.HTTP_409_CONFLICT,
                 "An account with this email already exists. Please sign in using your existing account."
             )
-        # GOOGLE provider but no ExternalIdentity record (migration edge case)
-        # Re-link the ExternalIdentity and login
-        logger.warning("google_identity_missing_relink", email=email)
+        
+        if not existing_user.is_active:
+            await write_audit_log(db, action="GOOGLE_LOGIN_FAILED_DISABLED", user_id=existing_user.id, request=request, outcome="FAILURE")
+            raise HTTPException(status.HTTP_401_UNAUTHORIZED, "User account is disabled")
+
+        # Automatically link verified Google identity to existing user
+        logger.info("google_identity_auto_link", email=email, user_id=str(existing_user.id))
         new_ext_id = ExternalIdentity(
             user_id=existing_user.id,
             provider="google",
@@ -489,11 +493,15 @@ async def login_google_user(
             email=email,
         )
         db.add(new_ext_id)
+        if not existing_user.avatar_url:
+            existing_user.avatar_url = id_info.get("picture", None)
         existing_user.last_login_at = datetime.now(UTC)
+        await db.flush()
+
         access_token = create_access_token(str(existing_user.id), existing_user.email, existing_user.role.value)
         raw_refresh, _ = await _issue_refresh_token(db, existing_user, request)
         set_refresh_token_cookie(response, raw_refresh)
-        await write_audit_log(db, action="GOOGLE_LOGIN_SUCCESS", user_id=existing_user.id, request=request)
+        await write_audit_log(db, action="GOOGLE_LOGIN_LINKED_SUCCESS", user_id=existing_user.id, request=request)
         return TokenResponse(
             access_token=access_token,
             expires_in=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
