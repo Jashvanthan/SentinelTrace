@@ -335,8 +335,10 @@ async def gmail_callback(
         return response
 
     except Exception as e:
+        import urllib.parse
         logger.error(f"Gmail OAuth callback failed: {e}")
-        response = RedirectResponse(f"{frontend_url}/settings?error=connection_failed")
+        err_msg = urllib.parse.quote(str(e))
+        response = RedirectResponse(f"{frontend_url}/settings?error={err_msg}")
         response.delete_cookie("st_gmail_oauth_nonce", path="/")
         response.delete_cookie("st_gmail_code_verifier", path="/")
         return response

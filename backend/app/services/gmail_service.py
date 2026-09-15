@@ -54,22 +54,60 @@ class GmailService:
 
     async def exchange_code(self, code: str, code_verifier: str | None = None, redirect_uri: str | None = None) -> dict:
         """Exchange the OAuth authorization code for credentials."""
-        def _exchange():
-            flow = self._get_flow(redirect_uri=redirect_uri)
-            if code_verifier:
-                flow.code_verifier = code_verifier
-            flow.fetch_token(code=code)
-            return flow.credentials
+        import httpx
+        from datetime import timedelta
 
-        creds = await asyncio.to_thread(_exchange)
+        resolved_redirect_uri = redirect_uri or self.settings.GMAIL_REDIRECT_URI
+        data = {
+            "code": code,
+            "client_id": self.settings.GOOGLE_CLIENT_ID,
+            "client_secret": self.settings.GOOGLE_CLIENT_SECRET,
+            "redirect_uri": resolved_redirect_uri,
+            "grant_type": "authorization_code",
+        }
+        if code_verifier:
+            data["code_verifier"] = code_verifier
+
+        async with httpx.AsyncClient(timeout=15.0) as http_client:
+            token_resp = await http_client.post("https://oauth2.googleapis.com/token", data=data)
+            token_data = token_resp.json()
+
+        if "error" in token_data:
+            logger.error(f"Google token exchange failed: {token_data}")
+            # Fallback to flow exchange
+            def _exchange():
+                flow = self._get_flow(redirect_uri=resolved_redirect_uri)
+                if code_verifier:
+                    flow.code_verifier = code_verifier
+                flow.fetch_token(code=code)
+                return flow.credentials
+
+            try:
+                creds = await asyncio.to_thread(_exchange)
+                return {
+                    "token": creds.token,
+                    "refresh_token": creds.refresh_token,
+                    "token_uri": creds.token_uri,
+                    "client_id": creds.client_id,
+                    "client_secret": creds.client_secret,
+                    "scopes": creds.scopes,
+                    "expiry": creds.expiry,
+                }
+            except Exception as e:
+                raise ValueError(token_data.get("error_description") or token_data.get("error") or str(e))
+
+        expires_in = token_data.get("expires_in", 3600)
+        expiry = datetime.now(timezone.utc) + timedelta(seconds=expires_in)
+        scopes = token_data.get("scope", "").split(" ") if token_data.get("scope") else self.scopes
+
         return {
-            "token": creds.token,
-            "refresh_token": creds.refresh_token,
-            "token_uri": creds.token_uri,
-            "client_id": creds.client_id,
-            "client_secret": creds.client_secret,
-            "scopes": creds.scopes,
-            "expiry": creds.expiry,
+            "token": token_data.get("access_token"),
+            "refresh_token": token_data.get("refresh_token"),
+            "token_uri": "https://oauth2.googleapis.com/token",
+            "client_id": self.settings.GOOGLE_CLIENT_ID,
+            "client_secret": self.settings.GOOGLE_CLIENT_SECRET,
+            "scopes": scopes,
+            "expiry": expiry,
         }
 
     async def _get_credentials(self, db: AsyncSession, connection: GmailConnection) -> Credentials:

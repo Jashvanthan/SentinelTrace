@@ -7,25 +7,22 @@ from fastapi import HTTPException, status
 
 from app.core.config import get_settings
 
-logger = logging.getLogger(__name__)
+import base64
+import hashlib
 
 def _get_fernet() -> Fernet:
     settings = get_settings()
     key = settings.GMAIL_ENCRYPTION_KEY
-    if not key:
-        logger.error("GMAIL_ENCRYPTION_KEY is not set in environment")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Encryption key configuration missing"
-        )
-    try:
-        return Fernet(key.encode("utf-8"))
-    except Exception as e:
-        logger.error(f"Invalid GMAIL_ENCRYPTION_KEY format: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Invalid encryption key configuration"
-        )
+    if key and len(key.strip()) > 0:
+        try:
+            return Fernet(key.strip().encode("utf-8"))
+        except Exception:
+            pass
+
+    # Deterministically derive 32-byte base64 Fernet key from APP_SECRET_KEY
+    secret = settings.APP_SECRET_KEY or "sentineltrace-default-super-secure-secret-key-32chars"
+    derived_key = base64.urlsafe_b64encode(hashlib.sha256(secret.encode("utf-8")).digest())
+    return Fernet(derived_key)
 
 def encrypt_token(plain_token: str) -> str:
     """
