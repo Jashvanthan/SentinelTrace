@@ -487,13 +487,13 @@ export function CampaignGraphPage() {
           </div>
 
           {/* Mobile Scroll Down Overlay Button */}
-          <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-10 lg:hidden">
+          <div className="absolute top-4 right-4 z-10 lg:hidden">
             <button
-              onClick={() => window.scrollBy({ top: window.innerHeight * 0.5, behavior: 'smooth' })}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-[#121824]/90 backdrop-blur border border-[#232e42] rounded-full text-xs font-mono text-white shadow-lg shadow-black/50 cursor-pointer hover:bg-[#161c2b] transition-colors"
+              onClick={() => window.scrollBy({ top: window.innerHeight * 0.6, behavior: 'smooth' })}
+              className="flex items-center gap-1.5 px-3 py-2 bg-[#2563eb]/90 backdrop-blur border border-[#3b82f6] rounded text-xs font-bold text-white shadow-lg shadow-black/50 cursor-pointer hover:bg-[#1d4ed8] transition-colors"
             >
-              <ChevronDown className="w-3.5 h-3.5" />
-              Scroll Details
+              Scroll to Details
+              <ChevronDown className="w-4 h-4" />
             </button>
           </div>
 
