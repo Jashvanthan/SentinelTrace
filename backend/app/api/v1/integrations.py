@@ -310,7 +310,8 @@ async def gmail_callback(
 
         # Automatically enqueue initial Gmail sync in the background
         try:
-            from app.worker import sync_gmail_account
+            from app.worker import sync_gmail_account, _async_sync_gmail_account
+            import asyncio
             job_id = str(uuid.uuid4())
             job = GmailSyncJob(
                 job_id=job_id,
@@ -320,7 +321,10 @@ async def gmail_callback(
             )
             db.add(job)
             await db.commit()
-            sync_gmail_account.delay(job_id, str(workspace_id), str(connection.id))
+            try:
+                sync_gmail_account.delay(job_id, str(workspace_id), str(connection.id))
+            except Exception:
+                asyncio.create_task(_async_sync_gmail_account(None, job_id, str(workspace_id), str(connection.id)))
             logger.info(f"Auto-triggered initial Gmail sync job {job_id} for workspace {workspace_id}")
         except Exception as sync_err:
             logger.warning(f"Could not auto-trigger initial Gmail sync: {sync_err}")
@@ -457,7 +461,8 @@ async def sync_gmail(
     if not connection or connection.status != "ACTIVE":
         raise HTTPException(status_code=400, detail="Active Gmail connection not found")
         
-    from app.worker import sync_gmail_account
+    from app.worker import sync_gmail_account, _async_sync_gmail_account
+    import asyncio
     
     job_id = str(uuid.uuid4())
     job = GmailSyncJob(
@@ -469,8 +474,10 @@ async def sync_gmail(
     db.add(job)
     await db.commit()
     
-    # Trigger Celery task
-    sync_gmail_account.delay(job_id, str(workspace_id), str(connection.id))
+    try:
+        sync_gmail_account.delay(job_id, str(workspace_id), str(connection.id))
+    except Exception:
+        asyncio.create_task(_async_sync_gmail_account(None, job_id, str(workspace_id), str(connection.id)))
     
     return {"status": "QUEUED", "job_id": job_id}
 

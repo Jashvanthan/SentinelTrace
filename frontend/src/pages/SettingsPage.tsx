@@ -1,4 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
+import { useQueryClient } from '@tanstack/react-query';
 import { useMe, useUpdateProfile, useWorkspaceMembers, useAddWorkspaceMember, useRemoveWorkspaceMember, useGmailIntegration, useSyncGmailIntegration, useDisconnectGmailIntegration } from '@/api/hooks';
 import { useAuthStore } from '@/store';
 import { useWorkspaceStore } from '@/store/workspace';
@@ -15,7 +17,9 @@ interface PopNotification {
 }
 
 export function SettingsPage() {
-  const [activeTab, setActiveTab] = useState<TabId>('general');
+  const [searchParams] = useSearchParams();
+  const initialTab: TabId = (searchParams.get('status') || searchParams.get('error') || searchParams.get('tab') === 'integrations') ? 'integrations' : 'general';
+  const [activeTab, setActiveTab] = useState<TabId>(initialTab);
   const [popMessage, setPopMessage] = useState<PopNotification | null>(null);
 
   const handleShowPop = (msg: PopNotification) => {
@@ -505,9 +509,23 @@ function IntegrationsSettings({ onShowPop }: { onShowPop: (msg: PopNotification)
   const { data: gmail, isLoading, error } = useGmailConnection(currentWorkspaceId);
   const { mutate: sync, isPending: isSyncing } = useSyncGmail(currentWorkspaceId);
   const updateConfigMutation = useUpdateGmailConfig(currentWorkspaceId);
+  const [searchParams] = useSearchParams();
+  const queryClient = useQueryClient();
 
   const [isConnecting, setIsConnecting] = useState(false);
   const [isDisconnecting, setIsDisconnecting] = useState(false);
+
+  useEffect(() => {
+    const statusParam = searchParams.get('status');
+    const errorParam = searchParams.get('error');
+
+    if (statusParam === 'connected' && currentWorkspaceId) {
+      queryClient.invalidateQueries({ queryKey: ['gmail_connection', currentWorkspaceId] });
+      onShowPop({ type: 'success', text: 'Gmail integration successfully connected and active.' });
+    } else if (errorParam) {
+      onShowPop({ type: 'error', text: `Gmail OAuth error: ${errorParam}` });
+    }
+  }, [searchParams, currentWorkspaceId, queryClient]);
 
   const handleConnect = async () => {
     if (!currentWorkspaceId) return;
