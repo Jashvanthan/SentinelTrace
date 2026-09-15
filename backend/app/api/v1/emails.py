@@ -184,12 +184,16 @@ async def analyze_email_on_demand(
     await db.commit()
     await db.refresh(analysis)
 
-    # Dispatch Celery worker task
+    # Dispatch worker task (Celery + Asyncio fallback)
     try:
-        from app.worker import analyze_email_job
-        analyze_email_job.delay(str(analysis.workspace_id), str(analysis.id))
+        from app.worker import analyze_email_job, _async_analyze_email_job
+        import asyncio
+        try:
+            analyze_email_job.delay(str(analysis.workspace_id), str(analysis.id))
+        except Exception:
+            asyncio.create_task(_async_analyze_email_job(None, str(analysis.workspace_id), str(analysis.id)))
     except Exception as queue_err:
-        logger.warning(f"Could not dispatch Celery task for on-demand analysis: {queue_err}")
+        logger.warning(f"Could not dispatch on-demand analysis: {queue_err}")
 
     await write_audit_log(
         db,

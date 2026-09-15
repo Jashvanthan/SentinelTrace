@@ -116,13 +116,20 @@ async def list_workspace_iocs(
             EmailAnalysis.threat_score,
             EmailAnalysis.confidence_score,
         )
-        .outerjoin(
+        .join(
             EmailAnalysis,
-            (IOC.analysis_id == EmailAnalysis.id) & (EmailAnalysis.workspace_id == workspace_id),
+            (IOC.analysis_id == EmailAnalysis.id) & (EmailAnalysis.workspace_id == workspace_id) & (EmailAnalysis.status == "COMPLETE"),
         )
         .where(IOC.workspace_id == workspace_id)
     )
-    count_stmt = select(func.count(IOC.id)).where(IOC.workspace_id == workspace_id)
+    count_stmt = (
+        select(func.count(IOC.id))
+        .join(
+            EmailAnalysis,
+            (IOC.analysis_id == EmailAnalysis.id) & (EmailAnalysis.workspace_id == workspace_id) & (EmailAnalysis.status == "COMPLETE"),
+        )
+        .where(IOC.workspace_id == workspace_id)
+    )
 
     if search and search.strip():
         search_term = f"%{search.strip()}%"
@@ -132,10 +139,7 @@ async def list_workspace_iocs(
             EmailAnalysis.sender_email.ilike(search_term),
         )
         stmt = stmt.where(search_filter)
-        count_stmt = count_stmt.outerjoin(
-            EmailAnalysis,
-            (IOC.analysis_id == EmailAnalysis.id) & (EmailAnalysis.workspace_id == workspace_id),
-        ).where(search_filter)
+        count_stmt = count_stmt.where(search_filter)
     
     if ioc_type and ioc_type.strip():
         type_filter = IOC.ioc_type == ioc_type.strip()
