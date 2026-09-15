@@ -177,6 +177,23 @@ async def get_events_ticket(current_user: CurrentUser):
 
 # ── Google OAuth ──────────────────────────────────────────────────────────────
 
+def _get_google_redirect_uri(request: Request) -> str:
+    """Resolve Google OAuth redirect URI dynamically based on runtime host or configuration."""
+    if settings.GOOGLE_REDIRECT_URI and not settings.GOOGLE_REDIRECT_URI.startswith("http://localhost"):
+        return settings.GOOGLE_REDIRECT_URI
+
+    proto = request.headers.get("x-forwarded-proto") or request.url.scheme
+    host = request.headers.get("x-forwarded-host") or request.url.netloc
+    
+    if "onrender.com" in host:
+        proto = "https"
+    
+    if host and "localhost" not in host and "127.0.0.1" not in host:
+        return f"{proto}://{host}/api/v1/auth/google/callback"
+        
+    return settings.GOOGLE_REDIRECT_URI or "http://localhost:8000/api/v1/auth/google/callback"
+
+
 @router.get("/google", response_model=GoogleOAuthURLResponse)
 async def google_oauth_start(
     db: DbSession,
@@ -221,9 +238,10 @@ async def google_oauth_start(
     await create_oauth_state(db, state_nonce, stored_nonce_payload)
     await db.commit()
 
+    google_redirect_uri = _get_google_redirect_uri(request)
     client = AsyncOAuth2Client(
         client_id=settings.GOOGLE_CLIENT_ID,
-        redirect_uri=settings.GOOGLE_REDIRECT_URI,
+        redirect_uri=google_redirect_uri,
         scope="openid email profile",  # ONLY identity scopes
     )
     auth_url, _ = client.create_authorization_url(
@@ -323,10 +341,11 @@ async def google_oauth_callback(
         from google.auth.transport import requests as google_requests
 
         # 3. Exchange Authorization Code for Tokens
+        google_redirect_uri = _get_google_redirect_uri(request)
         client = AsyncOAuth2Client(
             client_id=settings.GOOGLE_CLIENT_ID,
             client_secret=settings.GOOGLE_CLIENT_SECRET,
-            redirect_uri=settings.GOOGLE_REDIRECT_URI,
+            redirect_uri=google_redirect_uri,
         )
         token_data = await client.fetch_token(
             "https://oauth2.googleapis.com/token",
@@ -405,9 +424,11 @@ async def google_oauth_callback(
     except Exception as e:
         await db.rollback()
         import logging
+        import urllib.parse
         logging.getLogger("sentineltrace.auth").error(f"Google callback error: {e}")
+        err_msg = urllib.parse.quote(str(e))
         return RedirectResponse(
-            url=f"{frontend_url}/login?error=google_auth_failed",
+            url=f"{frontend_url}/login?error=google_auth_failed&detail={err_msg}",
             status_code=status.HTTP_302_FOUND,
         )
 
