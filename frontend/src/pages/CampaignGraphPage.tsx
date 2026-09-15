@@ -274,7 +274,7 @@ export function CampaignGraphPage() {
 
 
   return (
-    <div className="space-y-4 max-w-[1600px] mx-auto">
+    <div className="flex flex-col h-[calc(100dvh-7rem)] lg:h-[calc(100vh-6rem)] space-y-4 max-w-[1600px] mx-auto">
       {/* ── Page Header & Controls Toolbar ──────────────────────────────── */}
       <div className="bg-[#121824] border border-[#232e42] rounded p-4 space-y-3">
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
@@ -419,9 +419,9 @@ export function CampaignGraphPage() {
       </div>
 
       {/* ── Main Canvas & Right Side Column ─────────────────────────────── */}
-      <div className="relative min-h-[600px] h-auto lg:h-[calc(100vh-14rem)] w-full flex flex-col lg:flex-row bg-[#090d16] border border-[#232e42] rounded overflow-hidden">
+      <div className="relative flex-1 w-full flex flex-col lg:flex-row bg-[#090d16] border border-[#232e42] rounded overflow-hidden min-h-0">
         {/* Left Canvas Area (High Quality 3D Radial Balls + Relationship Label Canvas) */}
-        <div className="relative flex-1 min-h-[360px] sm:min-h-[460px] lg:min-h-0 h-[50vh] sm:h-[60vh] lg:h-full touch-none select-none overflow-hidden">
+        <div className="relative w-full h-[45vh] lg:flex-1 lg:h-full touch-none select-none overflow-hidden shrink-0">
           {/* Top-Left Controls Toolbar (Zoom & Up/Down/Left/Right Directional Pan) */}
           <div className="absolute top-4 left-4 z-10 flex flex-col bg-[#121824]/95 backdrop-blur border border-[#232e42] rounded-lg p-1.5 shadow-xl gap-1.5">
             {/* Zoom Controls */}
@@ -485,18 +485,6 @@ export function CampaignGraphPage() {
               </button>
             </div>
           </div>
-
-          {/* Mobile Scroll Down Overlay Button */}
-          <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-10 lg:hidden">
-            <button
-              onClick={() => window.scrollBy({ top: window.innerHeight * 0.5, behavior: 'smooth' })}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-[#121824]/90 backdrop-blur border border-[#232e42] rounded-full text-xs font-mono text-white shadow-lg shadow-black/50 cursor-pointer hover:bg-[#161c2b] transition-colors"
-            >
-              <ChevronDown className="w-3.5 h-3.5" />
-              Scroll Details
-            </button>
-          </div>
-
           {/* Canvas Render — Empty State or Interactive Force Graph */}
           {isLoading ? (
             <div className="flex flex-col items-center justify-center h-full gap-3 text-center p-6">
@@ -658,7 +646,7 @@ export function CampaignGraphPage() {
       </div>
 
         {/* ── Right Side Column (Live Mouse Hover / Selection Telemetry Panel) ── */}
-        <div className="w-full lg:w-[380px] bg-[#121824] border-t lg:border-t-0 lg:border-l border-[#232e42] min-h-[300px] lg:h-full flex flex-col z-20 shrink-0">
+        <div className="w-full lg:w-[380px] bg-[#121824] border-t lg:border-t-0 lg:border-l border-[#232e42] flex-1 lg:h-full flex flex-col z-20 shrink-0 min-h-0">
           
           {/* STATE 1: Mouse Hovered or Clicked Node Inspection */}
           {activeNode ? (
