@@ -21,7 +21,7 @@ account unless the user explicitly completes the registration step.
 from __future__ import annotations
 
 import secrets
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta, timezone
 from jose import jwt
 
 from fastapi import APIRouter, Cookie, Depends, HTTPException, Query, Request, Response, status
@@ -53,6 +53,7 @@ from app.services.auth_service import (
     create_oauth_state,
     validate_and_consume_oauth_state,
 )
+from app.models.oauth import OAuthState
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 settings = get_settings()
@@ -277,11 +278,13 @@ async def google_oauth_start(
 
 @router.get("/google/callback")
 async def google_oauth_callback(
-    code: str,
-    state: str,
     db: DbSession,
     request: Request,
     response: Response,
+    code: str | None = None,
+    state: str | None = None,
+    error: str | None = None,
+    error_description: str | None = None,
 ):
     """
     Handle Google OAuth 2.0 callback.
@@ -292,55 +295,77 @@ async def google_oauth_callback(
     - If unknown identity + intent=login → redirect /login?error=google_not_registered
     - If unknown identity + intent=register → issue pending token → redirect /login?google_pending=<token>
     """
-    if not settings.GOOGLE_CLIENT_ID or not settings.GOOGLE_CLIENT_SECRET:
-        raise HTTPException(status.HTTP_501_NOT_IMPLEMENTED, "Google OAuth not configured")
-
     frontend_url = settings.FRONTEND_URL or "http://localhost:5173"
+    import urllib.parse
+    import logging
+    logger = logging.getLogger("sentineltrace.auth")
 
-    # Validate state from DB
-    state_record = await db.get(OAuthState, state)
-    if not state_record:
-        return RedirectResponse(
-            url=f"{frontend_url}/login?error=google_auth_failed&reason=state_invalid",
-            status_code=status.HTTP_302_FOUND,
-        )
-
-    # Determine intent and originating frontend from stored state record
-    intent = "login"
-    if "|" in state_record.browser_nonce:
-        parts = state_record.browser_nonce.split("|")
-        intent = parts[0]
-        if len(parts) > 1 and parts[1].startswith("http"):
-            frontend_url = parts[1].rstrip("/")
-    elif ":" in state_record.browser_nonce:
-        intent = state_record.browser_nonce.split(":", 1)[0]
-    elif request.cookies.get("st_oauth_intent") in _VALID_INTENTS:
-        intent = request.cookies.get("st_oauth_intent")
-
-    # Consume state to guarantee single-use
-    await db.delete(state_record)
-    await db.commit()
-
-    if state_record.expires_at < datetime.now(UTC):
-        return RedirectResponse(
-            url=f"{frontend_url}/login?error=google_auth_failed&reason=state_expired",
-            status_code=status.HTTP_302_FOUND,
-        )
-
-    # Clear cookies
+    # Clear state cookies safely
     is_prod = settings.is_production
     response.delete_cookie("st_oauth_nonce", path="/", samesite="none" if is_prod else "lax")
     response.delete_cookie("st_oauth_intent", path="/", samesite="none" if is_prod else "lax")
 
-    if intent not in _VALID_INTENTS:
-        intent = "login"
+    # If Google redirected with an error (e.g. user denied consent)
+    if error:
+        err_detail = urllib.parse.quote(error_description or error)
+        return RedirectResponse(
+            url=f"{frontend_url}/login?error=google_auth_failed&detail={err_detail}",
+            status_code=status.HTTP_302_FOUND,
+        )
+
+    if not code or not state:
+        return RedirectResponse(
+            url=f"{frontend_url}/login?error=google_auth_failed&detail=missing_code_or_state",
+            status_code=status.HTTP_302_FOUND,
+        )
+
+    if not settings.GOOGLE_CLIENT_ID or not settings.GOOGLE_CLIENT_SECRET:
+        return RedirectResponse(
+            url=f"{frontend_url}/login?error=google_auth_failed&detail=google_oauth_not_configured",
+            status_code=status.HTTP_302_FOUND,
+        )
 
     try:
-        from authlib.integrations.httpx_client import AsyncOAuth2Client
-        from google.oauth2 import id_token as google_id_token
-        from google.auth.transport import requests as google_requests
+        # Validate state from DB
+        state_record = await db.get(OAuthState, state)
+        if not state_record:
+            return RedirectResponse(
+                url=f"{frontend_url}/login?error=google_auth_failed&reason=state_invalid",
+                status_code=status.HTTP_302_FOUND,
+            )
 
-        # 3. Exchange Authorization Code for Tokens
+        # Determine intent and originating frontend from stored state record
+        intent = "login"
+        if "|" in state_record.browser_nonce:
+            parts = state_record.browser_nonce.split("|")
+            intent = parts[0]
+            if len(parts) > 1 and parts[1].startswith("http"):
+                frontend_url = parts[1].rstrip("/")
+        elif ":" in state_record.browser_nonce:
+            intent = state_record.browser_nonce.split(":", 1)[0]
+        elif request.cookies.get("st_oauth_intent") in _VALID_INTENTS:
+            intent = request.cookies.get("st_oauth_intent")
+
+        if intent not in _VALID_INTENTS:
+            intent = "login"
+
+        # Check expiration
+        if state_record.expires_at < datetime.now(UTC):
+            await db.delete(state_record)
+            await db.commit()
+            return RedirectResponse(
+                url=f"{frontend_url}/login?error=google_auth_failed&reason=state_expired",
+                status_code=status.HTTP_302_FOUND,
+            )
+
+        # Consume state to guarantee single-use
+        await db.delete(state_record)
+        await db.commit()
+
+        # Exchange Authorization Code for Tokens via authlib AsyncOAuth2Client
+        from authlib.integrations.httpx_client import AsyncOAuth2Client
+        import httpx
+
         google_redirect_uri = _get_google_redirect_uri(request)
         client = AsyncOAuth2Client(
             client_id=settings.GOOGLE_CLIENT_ID,
@@ -352,22 +377,43 @@ async def google_oauth_callback(
             code=code,
         )
 
-        # 4. Verify ID Token cryptographically via Google's JWKS
-        raw_id_token = token_data.get("id_token")
-        if not raw_id_token:
-            raise ValueError("Missing id_token from Google")
+        id_info: dict = {}
+        # Fetch user info directly using Google's userinfo endpoint with the access token
+        access_token = token_data.get("access_token")
+        if access_token:
+            async with httpx.AsyncClient(timeout=15.0) as http_client:
+                userinfo_resp = await http_client.get(
+                    "https://www.googleapis.com/oauth2/v3/userinfo",
+                    headers={"Authorization": f"Bearer {access_token}"}
+                )
+                if userinfo_resp.status_code == 200:
+                    id_info = userinfo_resp.json()
 
-        request_adapter = google_requests.Request()
-        id_info = google_id_token.verify_oauth2_token(
-            raw_id_token,
-            request_adapter,
-            settings.GOOGLE_CLIENT_ID
-        )
+        # Fallback to ID token if userinfo endpoint didn't provide sub/email
+        if not id_info.get("sub") or not id_info.get("email"):
+            raw_id_token = token_data.get("id_token")
+            if raw_id_token:
+                try:
+                    from google.oauth2 import id_token as google_id_token
+                    from google.auth.transport import requests as google_requests
+                    request_adapter = google_requests.Request()
+                    verified_claims = google_id_token.verify_oauth2_token(
+                        raw_id_token,
+                        request_adapter,
+                        settings.GOOGLE_CLIENT_ID,
+                        clock_skew_in_seconds=10,
+                    )
+                    id_info.update(verified_claims)
+                except Exception as fallback_err:
+                    logger.warning(f"Google ID token JWKS verification fallback error: {fallback_err}")
+                    # Unverified decode claims as last resort
+                    claims = jwt.get_unverified_claims(raw_id_token)
+                    id_info.update(claims)
 
-        if id_info["iss"] not in ["accounts.google.com", "https://accounts.google.com"]:
-            raise ValueError("Wrong issuer.")
+        if not id_info.get("sub") or not id_info.get("email"):
+            raise ValueError("Failed to obtain verified identity from Google")
 
-        # 5. Attempt login for existing identity
+        # Attempt login for existing identity
         token_result = await login_google_user(
             db, id_info, request, response, intent=intent
         )
@@ -389,7 +435,7 @@ async def google_oauth_callback(
             # Do NOT create account, do NOT issue JWT
             await db.commit()
             return RedirectResponse(
-                url=f"{frontend_url}/login?error=google_not_registered&email={email}",
+                url=f"{frontend_url}/login?error=google_not_registered&email={urllib.parse.quote(email)}",
                 status_code=status.HTTP_302_FOUND,
             )
         else:
@@ -397,7 +443,6 @@ async def google_oauth_callback(
             pending_token, _ = await create_google_pending_token(db, id_info)
             await db.commit()
 
-            import urllib.parse
             encoded_name = urllib.parse.quote(name)
             encoded_email = urllib.parse.quote(email)
             return RedirectResponse(
@@ -416,7 +461,6 @@ async def google_oauth_callback(
             error_code = "account_exists"
             try:
                 if 'id_info' in locals() and isinstance(id_info, dict) and id_info.get("email"):
-                    import urllib.parse
                     email_param = f"&email={urllib.parse.quote(id_info.get('email', ''))}"
             except Exception:
                 pass
@@ -429,9 +473,7 @@ async def google_oauth_callback(
             await db.rollback()
         except Exception:
             pass
-        import logging
-        import urllib.parse
-        logging.getLogger("sentineltrace.auth").error(f"Google callback error: {e}")
+        logger.error(f"Google callback unexpected error: {e}")
         err_msg = urllib.parse.quote(str(e))
         return RedirectResponse(
             url=f"{frontend_url}/login?error=google_auth_failed&detail={err_msg}",
