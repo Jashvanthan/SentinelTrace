@@ -43,14 +43,24 @@ class GmailService:
         return flow
 
     def get_authorization_url(self, state: str, redirect_uri: str | None = None) -> tuple[str, str | None]:
-        """Generate the authorization URL and PKCE code_verifier for Gmail."""
-        flow = self._get_flow(state=state, redirect_uri=redirect_uri)
-        auth_url, _ = flow.authorization_url(
-            access_type="offline",
-            include_granted_scopes="true",
-            prompt="consent",
+        """Generate standard Google OAuth authorization URL for Gmail scopes without fragile cookie PKCE."""
+        from authlib.integrations.httpx_client import AsyncOAuth2Client
+
+        resolved_redirect_uri = redirect_uri or self.settings.GMAIL_REDIRECT_URI
+        client = AsyncOAuth2Client(
+            client_id=self.settings.GOOGLE_CLIENT_ID,
+            client_secret=self.settings.GOOGLE_CLIENT_SECRET,
+            redirect_uri=resolved_redirect_uri,
+            scope=self.settings.GMAIL_SCOPES,
         )
-        return auth_url, flow.code_verifier
+        auth_url, _ = client.create_authorization_url(
+            "https://accounts.google.com/o/oauth2/v2/auth",
+            state=state,
+            access_type="offline",
+            prompt="consent",
+            include_granted_scopes="true",
+        )
+        return auth_url, None
 
     async def exchange_code(self, code: str, code_verifier: str | None = None, redirect_uri: str | None = None) -> dict:
         """Exchange the OAuth authorization code for credentials."""
