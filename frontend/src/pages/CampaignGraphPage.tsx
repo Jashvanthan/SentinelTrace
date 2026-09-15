@@ -421,7 +421,7 @@ export function CampaignGraphPage() {
       {/* ── Main Canvas & Right Side Column ─────────────────────────────── */}
       <div className="relative min-h-[600px] h-auto lg:h-[calc(100vh-14rem)] w-full flex flex-col lg:flex-row bg-[#090d16] border border-[#232e42] rounded overflow-hidden">
         {/* Left Canvas Area (High Quality 3D Radial Balls + Relationship Label Canvas) */}
-        <div className="relative flex-1 min-h-[360px] sm:min-h-[460px] lg:min-h-0 h-[50vh] sm:h-[60vh] lg:h-full touch-none select-none overflow-hidden">
+        <div className="relative flex-1 min-h-[360px] sm:min-h-[460px] lg:min-h-0 h-[50vh] sm:h-[60vh] lg:h-full select-none overflow-hidden">
           {/* Top-Left Controls Toolbar (Zoom & Up/Down/Left/Right Directional Pan) */}
           <div className="absolute top-4 left-4 z-10 flex flex-col bg-[#121824]/95 backdrop-blur border border-[#232e42] rounded-lg p-1.5 shadow-xl gap-1.5">
             {/* Zoom Controls */}
@@ -532,7 +532,8 @@ export function CampaignGraphPage() {
               </button>
             </div>
           ) : (
-            <ForceGraph2D
+            <div className="w-full h-full touch-none">
+              <ForceGraph2D
               ref={fgRef}
               graphData={filteredGraphData}
               backgroundColor="#090d16"
@@ -663,6 +664,7 @@ export function CampaignGraphPage() {
               }
             }}
           />
+          </div>
         )}
       </div>
 
