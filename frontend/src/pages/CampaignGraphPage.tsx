@@ -487,7 +487,13 @@ export function CampaignGraphPage() {
           </div>
 
           {/* Mobile Swipe-to-Scroll Zone */}
-          <div className="absolute top-0 right-0 bottom-0 w-12 bg-gradient-to-l from-[#090d16]/90 to-transparent z-10 lg:hidden flex flex-col items-center justify-center pointer-events-auto border-l border-[#232e42]/50">
+          <div 
+            className="absolute top-0 right-0 bottom-0 w-12 bg-gradient-to-l from-[#090d16]/90 to-transparent z-20 lg:hidden flex flex-col items-center justify-center pointer-events-auto border-l border-[#232e42]/50"
+            onTouchStart={(e) => e.stopPropagation()}
+            onTouchMove={(e) => e.stopPropagation()}
+            onTouchEnd={(e) => e.stopPropagation()}
+            onWheel={(e) => e.stopPropagation()}
+          >
             <div className="flex flex-col items-center gap-3 opacity-60">
               <ChevronUp className="w-4 h-4 text-[#94a3b8]" />
               <div 
