@@ -406,7 +406,10 @@ async def google_oauth_callback(
             )
 
     except HTTPException as e:
-        await db.rollback()
+        try:
+            await db.rollback()
+        except Exception:
+            pass
         error_code = "google_auth_failed"
         email_param = ""
         if e.status_code == 409:
@@ -422,7 +425,10 @@ async def google_oauth_callback(
             status_code=status.HTTP_302_FOUND,
         )
     except Exception as e:
-        await db.rollback()
+        try:
+            await db.rollback()
+        except Exception:
+            pass
         import logging
         import urllib.parse
         logging.getLogger("sentineltrace.auth").error(f"Google callback error: {e}")
