@@ -486,15 +486,18 @@ export function CampaignGraphPage() {
             </div>
           </div>
 
-          {/* Mobile Scroll Down Overlay Button */}
-          <div className="absolute top-4 right-4 z-10 lg:hidden">
-            <button
-              onClick={() => window.scrollBy({ top: window.innerHeight * 0.6, behavior: 'smooth' })}
-              className="flex items-center gap-1.5 px-3 py-2 bg-[#2563eb]/90 backdrop-blur border border-[#3b82f6] rounded text-xs font-bold text-white shadow-lg shadow-black/50 cursor-pointer hover:bg-[#1d4ed8] transition-colors"
-            >
-              Scroll to Details
-              <ChevronDown className="w-4 h-4" />
-            </button>
+          {/* Mobile Swipe-to-Scroll Zone */}
+          <div className="absolute top-0 right-0 bottom-0 w-12 bg-gradient-to-l from-[#090d16]/90 to-transparent z-10 lg:hidden flex flex-col items-center justify-center pointer-events-auto border-l border-[#232e42]/50">
+            <div className="flex flex-col items-center gap-3 opacity-60">
+              <ChevronUp className="w-4 h-4 text-[#94a3b8]" />
+              <div 
+                className="text-[10px] font-bold text-[#94a3b8] tracking-[0.2em] uppercase" 
+                style={{ writingMode: 'vertical-rl', textOrientation: 'mixed' }}
+              >
+                Swipe to Scroll
+              </div>
+              <ChevronDown className="w-4 h-4 text-[#94a3b8]" />
+            </div>
           </div>
 
           {/* Canvas Render — Empty State or Interactive Force Graph */}
