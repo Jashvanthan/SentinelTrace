@@ -39,7 +39,7 @@ class GmailConnection(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     
     status: Mapped[str] = mapped_column(String(64), default="ACTIVE", nullable=False)
     monitoring_enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
-    analysis_mode: Mapped[str] = mapped_column(String(32), default="AUTO", nullable=False)  # "AUTO" | "MANUAL"
+    analysis_mode: Mapped[str] = mapped_column(String(32), default="MANUAL", nullable=False)  # "AUTO" | "MANUAL"
     last_sync_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     last_sync_cursor: Mapped[str | None] = mapped_column(String(256), nullable=True)
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)

@@ -142,7 +142,7 @@ async def _async_sync_gmail_account(task, job_id: str, workspace_id_str: str, co
                         except Exception as raw_err:
                             logger.warning(f"Could not fetch raw MIME for Gmail msg {msg_id}: {raw_err}")
 
-                        analysis_mode = (connection.analysis_mode or "AUTO").upper()
+                        analysis_mode = (connection.analysis_mode or "MANUAL").upper()
 
                         if raw_bytes and len(raw_bytes) > 0:
                             # Full raw RFC 5322 parsing
@@ -183,8 +183,8 @@ async def _async_sync_gmail_account(task, job_id: str, workspace_id_str: str, co
                                 except Exception as pipe_err:
                                     logger.error(f"Threat analysis failed on Gmail msg {msg_id}: {pipe_err}")
                             else:
-                                # Mode B: Monitor & Review — Fetch metadata/content only, STOP without automatic AI/threat analysis
-                                logger.info(f"Ingested Gmail msg {msg_id} in MANUAL mode (PENDING review)")
+                                # Mode B: Manual Analysis strictly — Ingest raw email as PENDING, do NOT execute AI pipeline
+                                logger.info(f"Ingested Gmail msg {msg_id} in STRICT MANUAL mode (status=PENDING)")
                         else:
                             # Fallback: metadata message format
                             from app.services.email_service import _parse_address, _decode_header_value
@@ -231,8 +231,8 @@ async def _async_sync_gmail_account(task, job_id: str, workspace_id_str: str, co
                                 message_id=headers_dict.get('message-id', msg_id),
                                 email_date=parsed_date,
                                 raw_eml_sha256=msg_sha256,
-                                status=AnalysisStatus.COMPLETE if analysis_mode == "AUTO" else AnalysisStatus.PENDING,
-                                threat_score=0.0 if analysis_mode == "AUTO" else None,
+                                status=AnalysisStatus.PENDING,
+                                threat_score=None,
                             )
                             db.add(analysis)
                             await db.commit()
