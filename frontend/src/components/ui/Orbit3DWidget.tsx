@@ -120,6 +120,18 @@ export function Orbit3DWidget() {
     };
   }, []);
 
+  // Expose global reload trigger for header buttons
+  useEffect(() => {
+    (window as any).triggerSentinelReload = triggerReloadAnimation;
+    return () => {
+      try {
+        delete (window as any).triggerSentinelReload;
+      } catch {
+        // ignore
+      }
+    };
+  }, [triggerReloadAnimation]);
+
   // ── Single Click Handler ───────────────────────────────────────────────────
   const handleSingleClick = useCallback(() => {
     clickBoostRef.current = 1.8;

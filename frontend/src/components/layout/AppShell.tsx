@@ -6,7 +6,7 @@ import {
   BarChart3, FileSearch, Globe, LayoutDashboard,
   LogOut, Mail, Menu, Network, Settings, Shield, ShieldAlert,
   User, Activity, FileText, Wifi, WifiOff, ChevronLeft, ChevronRight, Plug,
-  Plus, Search, HelpCircle, FolderKanban, Layers
+  Plus, Search, HelpCircle, FolderKanban, Layers, RefreshCw
 } from 'lucide-react';
 import { useAuthStore, useUIStore } from '@/store';
 import { useLogout } from '@/api/hooks';
@@ -331,6 +331,28 @@ export function AppShell() {
 
           {/* Right Header Status & User Controls */}
           <div className="flex items-center gap-2 sm:gap-3 md:gap-4 ml-auto">
+            <button
+              onClick={() => {
+                if (typeof (window as any).triggerSentinelReload === 'function') {
+                  (window as any).triggerSentinelReload();
+                } else {
+                  window.location.reload();
+                }
+              }}
+              onDoubleClick={() => {
+                if (typeof (window as any).triggerSentinelReload === 'function') {
+                  (window as any).triggerSentinelReload();
+                } else {
+                  window.location.reload();
+                }
+              }}
+              className="flex items-center gap-1.5 px-2.5 py-1 rounded bg-[#121824] hover:bg-[#1f2a3e] border border-[#232e42] hover:border-[#38bdf8] text-[#38bdf8] text-xs font-mono font-medium transition-all shadow-xs cursor-pointer group active:scale-95"
+              title="Click or Double-Click to Reload SOC System"
+            >
+              <RefreshCw className="w-3.5 h-3.5 group-hover:rotate-180 transition-transform duration-500 text-[#38bdf8]" />
+              <span className="hidden sm:inline">Refresh</span>
+            </button>
+
             <div className="hidden md:block">
               <WorkspaceSelector />
             </div>
