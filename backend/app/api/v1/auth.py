@@ -185,13 +185,20 @@ async def forgot_password(
     Generate and send a password reset email if the user exists.
     Always returns success to prevent email enumeration.
     """
-    stmt = select(User).where(User.email == payload.email)
+    email = payload.email.lower()
+    stmt = select(User).where(User.email == email)
     result = await db.execute(stmt)
     user = result.scalar_one_or_none()
     
+    import logging
+    logger = logging.getLogger(__name__)
+    
     if user:
+        logger.info(f"User {payload.email} found in database. Queuing email.")
         token = create_password_reset_token(user.email)
         background_tasks.add_task(send_reset_password_email, user.email, token)
+    else:
+        logger.warning(f"Forgot password requested for {payload.email}, but user does NOT exist in the database.")
         
     return {"message": "If that email exists in our system, you will receive a password reset link shortly."}
 
