@@ -10,7 +10,13 @@ settings = get_settings()
 
 class RedisManager:
     def __init__(self):
-        self.client = redis_async.from_url(settings.REDIS_URL, decode_responses=True)
+        url = settings.REDIS_URL if settings.REDIS_URL else "redis://localhost:6379/0"
+        if not (url.startswith("redis://") or url.startswith("rediss://") or url.startswith("unix://")):
+            url = "redis://localhost:6379/0"
+        try:
+            self.client = redis_async.from_url(url, decode_responses=True)
+        except Exception:
+            self.client = redis_async.from_url("redis://localhost:6379/0", decode_responses=True)
 
     async def ping(self) -> bool:
         try:
@@ -19,9 +25,13 @@ class RedisManager:
             return False
 
     async def close(self):
-        await self.client.aclose()
+        try:
+            await self.client.aclose()
+        except Exception:
+            pass
 
 redis_manager = RedisManager()
 
 def get_redis():
     return redis_manager.client
+

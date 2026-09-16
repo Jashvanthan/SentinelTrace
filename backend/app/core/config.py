@@ -62,6 +62,16 @@ class Settings(BaseSettings):
     # ── Redis ────────────────────────────────────────────────────────────────
     REDIS_URL: str = "redis://localhost:6379/0"
 
+    @field_validator("REDIS_URL", mode="before")
+    @classmethod
+    def assemble_redis_url(cls, v: str | None) -> str:
+        if not v or not isinstance(v, str):
+            return "redis://localhost:6379/0"
+        v_str = v.strip().strip("'\"")
+        if not (v_str.startswith("redis://") or v_str.startswith("rediss://") or v_str.startswith("unix://")):
+            return "redis://localhost:6379/0"
+        return v_str
+
     # ── JWT ──────────────────────────────────────────────────────────────────
     JWT_SECRET: str = Field("sentineltrace-jwt-secret-key-must-be-32-chars-long", min_length=32)
     JWT_ALGORITHM: str = "HS256"
