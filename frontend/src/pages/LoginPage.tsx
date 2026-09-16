@@ -2,7 +2,7 @@
 // Strict Google OAuth: Login (existing accounts) vs Register (new accounts)
 
 import { useState, useEffect } from 'react';
-import { useNavigate, useLocation } from 'react-router-dom';
+import { useNavigate, useLocation, Link } from 'react-router-dom';
 import { Shield, Eye, EyeOff, ExternalLink, UserPlus, LogIn, AlertCircle, CheckCircle2, Loader2, Mail } from 'lucide-react';
 import { useLogin, useRegister } from '@/api/hooks';
 import { useAuthStore, useNotificationStore } from '@/store';
@@ -494,6 +494,13 @@ export function LoginPage() {
                     {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                   </button>
                 </div>
+                {mode === 'login' && (
+                  <div className="flex justify-end mt-1.5">
+                    <Link to="/forgot-password" className="text-xs text-[hsl(var(--accent))] hover:underline">
+                      Forgot Password?
+                    </Link>
+                  </div>
+                )}
               </div>
 
               {/* Submit */}

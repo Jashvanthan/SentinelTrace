@@ -166,6 +166,62 @@ async def change_password(
     """
     return await change_user_password(db, current_user, payload, request, response)
 
+from app.schemas.auth import ForgotPasswordRequest, ResetPasswordRequest
+from app.utils.email import send_reset_password_email
+from app.core.security import create_password_reset_token, verify_password_reset_token
+from app.services.password_service import hash_password
+from app.models.user import User
+from sqlalchemy import select
+
+@router.post("/forgot-password")
+async def forgot_password(
+    payload: ForgotPasswordRequest,
+    db: DbSession,
+):
+    """
+    Generate and send a password reset email if the user exists.
+    Always returns success to prevent email enumeration.
+    """
+    stmt = select(User).where(User.email == payload.email)
+    result = await db.execute(stmt)
+    user = result.scalar_one_or_none()
+    
+    if user:
+        token = create_password_reset_token(user.email)
+        send_reset_password_email(user.email, token)
+        
+    return {"message": "If that email exists in our system, you will receive a password reset link shortly."}
+
+@router.post("/reset-password")
+async def reset_password(
+    payload: ResetPasswordRequest,
+    db: DbSession,
+):
+    """
+    Reset a user's password using a valid reset token.
+    """
+    email = verify_password_reset_token(payload.token)
+    if not email:
+        raise HTTPException(status_code=400, detail="Invalid or expired reset token")
+        
+    stmt = select(User).where(User.email == email)
+    result = await db.execute(stmt)
+    user = result.scalar_one_or_none()
+    
+    if not user:
+        raise HTTPException(status_code=400, detail="Invalid or expired reset token")
+        
+    user.password_hash = hash_password(payload.new_password)
+    # Revoke all existing sessions for security
+    from app.models.oauth import RefreshSession
+    from sqlalchemy import delete
+    del_stmt = delete(RefreshSession).where(RefreshSession.user_id == user.id)
+    await db.execute(del_stmt)
+    await db.commit()
+    
+    return {"message": "Password has been reset successfully. You can now login."}
+
+
 
 @router.get("/events-ticket")
 async def get_events_ticket(current_user: CurrentUser):

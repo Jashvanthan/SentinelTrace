@@ -89,6 +89,33 @@ def decode_access_token(token: str) -> dict[str, Any]:
     except JWTError:
         raise
 
+def create_password_reset_token(email: str) -> str:
+    """
+    Create a JWT token for password reset.
+    Valid for 30 minutes.
+    """
+    now = datetime.now(UTC)
+    expire = now + timedelta(minutes=30)
+    payload = {
+        "sub": email,
+        "exp": expire,
+        "iat": now,
+        "scope": "password_reset"
+    }
+    return jwt.encode(payload, settings.JWT_SECRET, algorithm=settings.JWT_ALGORITHM)
+
+def verify_password_reset_token(token: str) -> str | None:
+    """
+    Verify the password reset token and return the email if valid.
+    """
+    try:
+        payload = jwt.decode(token, settings.JWT_SECRET, algorithms=[settings.JWT_ALGORITHM])
+        if payload.get("scope") != "password_reset":
+            return None
+        return payload.get("sub")
+    except JWTError:
+        return None
+
 
 # ── Refresh Tokens ────────────────────────────────────────────────────────────
 

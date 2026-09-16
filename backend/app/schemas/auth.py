@@ -32,6 +32,12 @@ class ChangePasswordRequest(BaseModel):
     current_password: str
     new_password: str = Field(..., min_length=12, max_length=128)
 
+class ForgotPasswordRequest(BaseModel):
+    email: EmailStr
+
+class ResetPasswordRequest(BaseModel):
+    token: str = Field(..., min_length=10)
+    new_password: str = Field(..., min_length=12, max_length=128)
 
 # ── Response Schemas ──────────────────────────────────────────────────────────
 
