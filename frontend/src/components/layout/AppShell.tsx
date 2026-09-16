@@ -15,6 +15,8 @@ import { cn } from '@/utils';
 import { useWorkspaces } from '@/api/workspaces';
 import { useWorkspaceStore } from '@/store';
 import { useRealtimeEvents } from '@/api/realtime';
+import { Orbit3DWidget } from '@/components/ui/Orbit3DWidget';
+import { AnimatedFavicon } from '@/components/ui/AnimatedFavicon';
 
 interface NavItem {
   label: string;
@@ -68,6 +70,8 @@ export function AppShell() {
 
   return (
     <div className="flex h-screen overflow-hidden bg-[#090d16] text-[#f1f5f9]">
+      <AnimatedFavicon />
+      <Orbit3DWidget />
       {/* ── MOBILE DRAWER BACKDROP ─────────────────────────────────────────── */}
       {mobileMenuOpen && (
         <div
