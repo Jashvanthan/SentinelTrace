@@ -131,18 +131,58 @@ export function getIOCTypeLabel(iocType: string): string {
 }
 
 /**
- * Safely extracts a displayable string from any error object, including
- * FastAPI Pydantic 422 error structures ({ type, loc, msg, input, ctx }).
+ * Safely extracts a user-friendly displayable string from any error object,
+ * hiding internal server/backend technical details from end-users.
  */
-export function extractErrorMessage(err: unknown, defaultMessage = 'An unexpected error occurred'): string {
+export function extractErrorMessage(err: unknown, defaultMessage = 'An unexpected error occurred. Please try again.'): string {
   if (!err) return defaultMessage;
-  if (typeof err === 'string') return err;
-  const anyErr = err as any;
-  if (anyErr?.code === 'ERR_NETWORK' || anyErr?.message === 'Network Error' || anyErr?.message === 'Failed to fetch') {
-    return 'Unable to connect to the SentinelTrace API server. Please verify the backend is running or check your VITE_API_BASE_URL configuration.';
+
+  if (typeof err === 'string') {
+    if (err.includes('Network Error') || err.includes('ERR_NETWORK') || err.includes('Failed to fetch')) {
+      return 'Network connection issue. Please check your internet connection or try again in a moment.';
+    }
+    if (err.includes('timeout') || err.includes('exceed') || err.includes('ECONNABORTED')) {
+      return 'Request timed out. Please try again.';
+    }
+    return err;
   }
+
+  const anyErr = err as any;
+
+  // 1. Network connectivity / server unreachable
+  if (
+    anyErr?.code === 'ERR_NETWORK' ||
+    anyErr?.message === 'Network Error' ||
+    anyErr?.message === 'Failed to fetch' ||
+    (anyErr?.name === 'TypeError' && anyErr?.message?.includes('fetch'))
+  ) {
+    return 'Network connection issue. Please check your internet connection or try again in a moment.';
+  }
+
+  // 2. Request timeout / long waiting
+  if (
+    anyErr?.code === 'ECONNABORTED' ||
+    anyErr?.message?.toLowerCase().includes('timeout') ||
+    anyErr?.message?.toLowerCase().includes('exceed')
+  ) {
+    return 'Request timed out. Please try again.';
+  }
+
+  // 3. HTTP status-based user-friendly messages
+  const status = anyErr?.response?.status;
+  if (status === 500 || status === 502 || status === 503 || status === 504) {
+    return 'Service temporarily unavailable. Please try again in a moment.';
+  }
+
+  // 4. FastAPI Pydantic detail field
   const detail = anyErr?.response?.data?.detail ?? anyErr?.detail;
-  if (typeof detail === 'string') return detail;
+  if (typeof detail === 'string') {
+    if (detail.includes('Internal Server Error') || detail.includes('Traceback')) {
+      return 'Service temporarily unavailable. Please try again in a moment.';
+    }
+    return detail;
+  }
+
   if (Array.isArray(detail)) {
     return detail
       .map((item) => {
@@ -155,12 +195,25 @@ export function extractErrorMessage(err: unknown, defaultMessage = 'An unexpecte
       })
       .join('; ');
   }
+
   if (detail && typeof detail === 'object') {
-    return detail.msg || detail.message || JSON.stringify(detail);
+    return detail.msg || detail.message || defaultMessage;
   }
+
   if (anyErr?.message && typeof anyErr.message === 'string') {
-    return anyErr.message;
+    const msg = anyErr.message;
+    if (msg.includes('Network Error') || msg.includes('Failed to fetch')) {
+      return 'Network connection issue. Please check your internet connection or try again in a moment.';
+    }
+    if (msg.includes('timeout') || msg.includes('exceed')) {
+      return 'Request timed out. Please try again.';
+    }
+    if (!msg.startsWith('{') && !msg.startsWith('<') && !msg.includes('Traceback')) {
+      return msg;
+    }
   }
+
   return defaultMessage;
 }
+
 
