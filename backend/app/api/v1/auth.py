@@ -173,10 +173,13 @@ from app.services.password_service import hash_password
 from app.models.user import User
 from sqlalchemy import select
 
+from fastapi import APIRouter, Cookie, Depends, HTTPException, Query, Request, Response, status, BackgroundTasks
+
 @router.post("/forgot-password")
 async def forgot_password(
     payload: ForgotPasswordRequest,
     db: DbSession,
+    background_tasks: BackgroundTasks,
 ):
     """
     Generate and send a password reset email if the user exists.
@@ -188,7 +191,7 @@ async def forgot_password(
     
     if user:
         token = create_password_reset_token(user.email)
-        send_reset_password_email(user.email, token)
+        background_tasks.add_task(send_reset_password_email, user.email, token)
         
     return {"message": "If that email exists in our system, you will receive a password reset link shortly."}
 

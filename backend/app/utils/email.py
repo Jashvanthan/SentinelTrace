@@ -36,7 +36,8 @@ def send_reset_password_email(email: str, token: str) -> bool:
         msg.attach(part)
 
         with smtplib.SMTP_SSL(settings.SMTP_HOST, settings.SMTP_PORT) as server:
-            server.login(settings.SMTP_USER, settings.SMTP_PASSWORD)
+            password = settings.SMTP_PASSWORD.replace(" ", "") if settings.SMTP_PASSWORD else ""
+            server.login(settings.SMTP_USER, password)
             server.send_message(msg)
 
         logger.info(f"Password reset email sent to {email}")
