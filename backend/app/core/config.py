@@ -127,6 +127,10 @@ class Settings(BaseSettings):
     SMTP_FROM_NAME: str = "SentinelTrace SOC Alert Desk"
     SUPPORT_RECEIVER_EMAIL: str = "jashvan467@gmail.com"
 
+    # ── Resend HTTP API (for Cloud Deployments e.g. Render) ─────────────────────
+    RESEND_API_KEY: str = ""
+    RESEND_FROM_EMAIL: str = "onboarding@resend.dev"
+
     # ── Rate Limiting ────────────────────────────────────────────────────────
     RATE_LIMIT_PER_MINUTE: int = 60
     RATE_LIMIT_BURST: int = 10
