@@ -223,7 +223,7 @@ async def reset_password(
         
     user.password_hash = hash_password(payload.new_password)
     # Revoke all existing sessions for security
-    from app.models.oauth import RefreshSession
+    from app.models.refresh_session import RefreshSession
     from sqlalchemy import delete
     del_stmt = delete(RefreshSession).where(RefreshSession.user_id == user.id)
     await db.execute(del_stmt)
