@@ -16,6 +16,29 @@ class Base(DeclarativeBase):
     pass
 
 
+# ── SQLite Compatibility Compilers for PostgreSQL Dialect Types ─────────────
+from sqlalchemy.ext.compiler import compiles
+from sqlalchemy.dialects.postgresql import JSONB, UUID, INET, ARRAY as PG_ARRAY
+from sqlalchemy.types import ARRAY as GENERIC_ARRAY
+
+@compiles(JSONB, "sqlite")
+def _compile_jsonb_sqlite(element, compiler, **kw):
+    return "JSON"
+
+@compiles(UUID, "sqlite")
+def _compile_uuid_sqlite(element, compiler, **kw):
+    return "VARCHAR(36)"
+
+@compiles(INET, "sqlite")
+def _compile_inet_sqlite(element, compiler, **kw):
+    return "VARCHAR(45)"
+
+@compiles(PG_ARRAY, "sqlite")
+@compiles(GENERIC_ARRAY, "sqlite")
+def _compile_array_sqlite(element, compiler, **kw):
+    return "JSON"
+
+
 class TimestampMixin:
     """Adds created_at / updated_at timestamps to any model."""
 

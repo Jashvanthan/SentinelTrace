@@ -23,7 +23,7 @@ pwd_context = CryptContext(
     argon2__parallelism=1,       # 1 thread
 )
 
-MIN_PASSWORD_LENGTH = 12
+MIN_PASSWORD_LENGTH = 8
 
 # Pre-computed valid Argon2id hash for constant-time dummy verification on nonexistent users
 DUMMY_ARGON2_HASH = "$argon2id$v=19$m=65536,t=3,p=1$0rr3vrdWqhVirJVSCsEY4w$bo2daFd+K3RqdIEoJjn14y/YLXQeawcDiQM5Q6v4TRI"
