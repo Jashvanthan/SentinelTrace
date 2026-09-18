@@ -16,7 +16,7 @@ import {
   RefreshCw
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
-import { useWorkspaceStats } from '@/api/hooks';
+import { useWorkspaceStats, useMe } from '@/api/hooks';
 import { useWorkspaceStore } from '@/store';
 import { useWorkspaces } from '@/api/workspaces';
 import { StatCard } from '@/components/dashboard/StatCard';
@@ -28,6 +28,10 @@ export function DashboardPage() {
   const dateInputRef = useRef<HTMLInputElement>(null);
   const { currentWorkspaceId, setCurrentWorkspaceId } = useWorkspaceStore();
   const { data: workspaces } = useWorkspaces();
+  const { data: me } = useMe();
+
+  const minDate = me?.created_at ? new Date(me.created_at).toISOString().split('T')[0] : undefined;
+  const maxDate = new Date().toISOString().split('T')[0];
 
   useEffect(() => {
     if (workspaces && workspaces.length > 0) {
@@ -128,6 +132,8 @@ export function DashboardPage() {
             <input 
               ref={dateInputRef}
               type="date" 
+              min={minDate}
+              max={maxDate}
               value={selectedDate} 
               onChange={(e) => setSelectedDate(e.target.value)} 
               className="absolute opacity-0 w-0 h-0 pointer-events-none"

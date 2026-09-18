@@ -274,7 +274,7 @@ async def get_workspace_stats(
 
     if date:
         try:
-            target_date = datetime.strptime(date, "%Y-%m-%d").replace(tzinfo=UTC)
+            target_date = datetime.strptime(date, "%Y-%m-%d") # naive representing UTC
             end_date = target_date + timedelta(days=1)
             time_filters_email.extend([EmailAnalysis.created_at >= target_date, EmailAnalysis.created_at < end_date])
             time_filters_campaign.extend([Campaign.updated_at >= target_date, Campaign.updated_at < end_date])
@@ -283,7 +283,7 @@ async def get_workspace_stats(
             pass
     else:
         # Default to last 24 hours
-        time_limit = datetime.now(UTC) - timedelta(hours=24)
+        time_limit = datetime.now(UTC).replace(tzinfo=None) - timedelta(hours=24)
         time_filters_email.append(EmailAnalysis.created_at >= time_limit)
         time_filters_campaign.append(Campaign.updated_at >= time_limit)
         time_filters_ioc.append(IOC.created_at >= time_limit)
