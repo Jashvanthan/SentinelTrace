@@ -396,8 +396,10 @@ export function AppShell() {
         </header>
 
         {/* Dynamic Page View */}
-        <main className="flex-1 flex flex-col overflow-y-auto p-3 sm:p-4 md:p-6 scrollable bg-[#090d16] overflow-x-hidden">
-          <Outlet />
+        <main className="flex-1 overflow-y-auto bg-[#090d16] overflow-x-hidden relative">
+          <div className="min-h-full flex flex-col p-3 sm:p-4 md:p-6">
+            <Outlet />
+          </div>
         </main>
       </div>
     </div>
