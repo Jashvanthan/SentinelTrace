@@ -59,11 +59,13 @@ export function DashboardPage() {
 
   if (!currentWorkspaceId) {
     return (
-      <div className="flex flex-col items-center justify-center h-64 gap-3">
-        <Shield className="w-10 h-10 text-[hsl(var(--foreground-subtle))]" />
-        <p className="text-sm text-[hsl(var(--foreground-muted))] font-mono">
-          Select a workspace to view the security overview.
-        </p>
+      <div className="space-y-6 max-w-7xl mx-auto flex flex-col flex-1 w-full animate-in fade-in duration-500">
+        <div className="flex flex-col items-center justify-center h-64 gap-3">
+          <Shield className="w-10 h-10 text-[hsl(var(--foreground-subtle))]" />
+          <p className="text-sm text-[hsl(var(--foreground-muted))] font-mono">
+            Select a workspace to view the security overview.
+          </p>
+        </div>
       </div>
     );
   }

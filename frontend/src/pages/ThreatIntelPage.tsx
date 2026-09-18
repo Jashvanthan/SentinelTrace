@@ -109,7 +109,7 @@ export function ThreatIntelPage() {
   };
 
   return (
-    <div className="space-y-6 flex flex-col h-full max-w-7xl mx-auto animate-in fade-in zoom-in-95 duration-500">
+    <div className="space-y-6 flex flex-col flex-1 w-full max-w-7xl mx-auto animate-in fade-in zoom-in-95 duration-500">
       {/* Header & Page Description */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
