@@ -247,8 +247,8 @@ async def remove_workspace_member(
 async def get_workspace_stats(
     workspace_id: uuid.UUID,
     db: DbSession,
-    # require_workspace_role() with no roles = any authenticated member can access
     _: Annotated[WorkspaceMember, Depends(require_workspace_role())],
+    date: str | None = None,
 ) -> WorkspaceStatsResponse:
     """
     Return aggregated security statistics for the dashboard.
@@ -266,10 +266,33 @@ async def get_workspace_stats(
     All metrics are computed via SQL aggregation (COUNT / AVG / GROUP BY).
     No Python-level iteration over large datasets.
     """
+    # ── Date Filtering ────────────────────────────────────────────────────────
+    from datetime import datetime, timedelta, UTC
+    time_filters_email = []
+    time_filters_campaign = []
+    time_filters_ioc = []
+
+    if date:
+        try:
+            target_date = datetime.strptime(date, "%Y-%m-%d").replace(tzinfo=UTC)
+            end_date = target_date + timedelta(days=1)
+            time_filters_email.extend([EmailAnalysis.created_at >= target_date, EmailAnalysis.created_at < end_date])
+            time_filters_campaign.extend([Campaign.updated_at >= target_date, Campaign.updated_at < end_date])
+            time_filters_ioc.extend([IOC.created_at >= target_date, IOC.created_at < end_date])
+        except ValueError:
+            pass
+    else:
+        # Default to last 24 hours
+        time_limit = datetime.now(UTC) - timedelta(hours=24)
+        time_filters_email.append(EmailAnalysis.created_at >= time_limit)
+        time_filters_campaign.append(Campaign.updated_at >= time_limit)
+        time_filters_ioc.append(IOC.created_at >= time_limit)
+
     # ── 1. Total emails scanned vs fetched ────────────────────────────────────
     total_emails_fetched: int = await db.scalar(
         select(func.count(EmailAnalysis.id)).where(
-            EmailAnalysis.workspace_id == workspace_id
+            EmailAnalysis.workspace_id == workspace_id,
+            *time_filters_email
         )
     ) or 0
 
@@ -277,6 +300,7 @@ async def get_workspace_stats(
         select(func.count(EmailAnalysis.id)).where(
             EmailAnalysis.workspace_id == workspace_id,
             EmailAnalysis.status == AnalysisStatus.COMPLETE,
+            *time_filters_email
         )
     ) or 0
 
@@ -284,6 +308,7 @@ async def get_workspace_stats(
         select(func.count(EmailAnalysis.id)).where(
             EmailAnalysis.workspace_id == workspace_id,
             EmailAnalysis.status == AnalysisStatus.PENDING,
+            *time_filters_email
         )
     ) or 0
 
@@ -294,6 +319,7 @@ async def get_workspace_stats(
             EmailAnalysis.workspace_id == workspace_id,
             EmailAnalysis.status == AnalysisStatus.COMPLETE,
             EmailAnalysis.severity.in_(threat_severities),
+            *time_filters_email
         )
     ) or 0
 
@@ -303,6 +329,7 @@ async def get_workspace_stats(
         select(func.count(Campaign.id)).where(
             Campaign.workspace_id == workspace_id,
             Campaign.status.in_(active_campaign_statuses),
+            *time_filters_campaign
         )
     ) or 0
 
@@ -314,6 +341,7 @@ async def get_workspace_stats(
         select(func.avg(EmailAnalysis.threat_score)).where(
             EmailAnalysis.workspace_id == workspace_id,
             EmailAnalysis.threat_score.is_not(None),
+            *time_filters_email
         )
     )
     average_threat_score = round(float(avg_score_raw), 2) if avg_score_raw is not None else None
@@ -339,7 +367,10 @@ async def get_workspace_stats(
     ioc_type_rows = (
         await db.execute(
             select(IOC.ioc_type, func.count(IOC.id).label("cnt"))
-            .where(IOC.workspace_id == workspace_id)
+            .where(
+                IOC.workspace_id == workspace_id,
+                *time_filters_ioc
+            )
             .group_by(IOC.ioc_type)
         )
     ).all()
@@ -396,7 +427,10 @@ async def get_workspace_stats(
     recent_email_rows = (
         await db.execute(
             select(EmailAnalysis)
-            .where(EmailAnalysis.workspace_id == workspace_id)
+            .where(
+                EmailAnalysis.workspace_id == workspace_id,
+                *time_filters_email
+            )
             .order_by(EmailAnalysis.created_at.desc())
             .limit(8)
         )

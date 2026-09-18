@@ -388,9 +388,9 @@ export function useCampaignGraph(workspaceId: string | null, params: { analysis_
 
 // ── Step 14: Workspace-Scoped Dashboard Hooks ─────────────────────────────────
 
-export function useWorkspaceStats(workspaceId: string | null) {
+export function useWorkspaceStats(workspaceId: string | null, date?: string) {
   return useQuery({
-    queryKey: ['workspace-stats', workspaceId || 'default'],
+    queryKey: ['workspace-stats', workspaceId || 'default', date],
     queryFn: async () => {
       let wsId = workspaceId || useWorkspaceStore.getState().currentWorkspaceId;
       if (!wsId || wsId === 'default') {
@@ -401,7 +401,8 @@ export function useWorkspaceStats(workspaceId: string | null) {
         }
       }
       try {
-        const res = await apiClient.get<WorkspaceStats>(`/workspaces/${wsId}/stats`);
+        const params = date ? { date } : {};
+        const res = await apiClient.get<WorkspaceStats>(`/workspaces/${wsId}/stats`, { params });
         return res.data;
       } catch (err: any) {
         if (err.response?.status === 404 || err.response?.status === 403 || err.response?.status === 422) {
@@ -409,7 +410,8 @@ export function useWorkspaceStats(workspaceId: string | null) {
           if (wsRes.data && wsRes.data.length > 0) {
             const validId = wsRes.data[0].id;
             useWorkspaceStore.getState().setCurrentWorkspaceId(validId);
-            const retryRes = await apiClient.get<WorkspaceStats>(`/workspaces/${validId}/stats`);
+            const params = date ? { date } : {};
+            const retryRes = await apiClient.get<WorkspaceStats>(`/workspaces/${validId}/stats`, { params });
             return retryRes.data;
           }
         }

@@ -38,8 +38,6 @@ export function LoginPage() {
   const location = useLocation();
   const notify = useNotificationStore((s) => s.addNotification);
 
-  const from = (location.state as { from?: { pathname: string } })?.from?.pathname || '/dashboard';
-
   // Parse URL params on mount — handles OAuth callbacks
   useEffect(() => {
     const search = location.search || '';
@@ -57,7 +55,7 @@ export function LoginPage() {
           .then((res) => {
             setAuth(res.data, directToken);
             setAccessToken(directToken);
-            navigate(from, { replace: true });
+            navigate('/dashboard', { replace: true });
           })
           .catch(() => {
             setFormError('Google sign-in succeeded, but profile could not be loaded. Please try again.');
@@ -71,7 +69,7 @@ export function LoginPage() {
         .then((res) => {
           setAuth(res.data.user, res.data.access_token);
           setAccessToken(res.data.access_token);
-          navigate(from, { replace: true });
+          navigate('/dashboard', { replace: true });
         })
         .catch(() => {
           setFormError('Google sign-in failed. Please try again.');
@@ -141,7 +139,7 @@ export function LoginPage() {
       setFormError(msg);
       navigate('/login', { replace: true });
     }
-  }, [location, from, navigate, setAuth, notify]);
+  }, [location, navigate, setAuth, notify]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -158,7 +156,7 @@ export function LoginPage() {
         const data: any = await login.mutateAsync({ email, password });
         setAuth(data.user, data.access_token);
         setAccessToken(data.access_token);
-        navigate(from, { replace: true });
+        navigate('/dashboard', { replace: true });
       } catch (err: any) {
         const msg = extractErrorMessage(err, 'Invalid email or password.');
         setFormError(msg);
@@ -198,7 +196,7 @@ export function LoginPage() {
           description: `Welcome to SentinelTrace, ${data.user.full_name || data.user.email}!`,
         });
 
-        navigate(from, { replace: true });
+        navigate('/dashboard', { replace: true });
       } catch (err: any) {
         const msg = extractErrorMessage(err, 'Registration failed. The email may already be registered.');
         setFormError(msg);
@@ -259,7 +257,7 @@ export function LoginPage() {
       }).catch(() => {});
 
       notify({ type: 'success', title: 'Account Created', description: `Welcome to SentinelTrace, ${data.user.full_name || data.user.email}!` });
-      navigate(from, { replace: true });
+      navigate('/dashboard', { replace: true });
     } catch (err: any) {
       const detail = extractErrorMessage(err, 'Google registration could not be completed.');
       if (detail.toLowerCase().includes('expired')) {

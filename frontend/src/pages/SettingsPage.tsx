@@ -207,7 +207,7 @@ function GeneralSettings({ onShowPop }: { onShowPop: (msg: PopNotification) => v
   if (isLoading && !currentUser) return <LoadingState />;
 
   return (
-    <div className="p-6 space-y-8 max-w-2xl">
+    <div className="p-6 space-y-8 max-w-2xl animate-in fade-in slide-in-from-bottom-4 duration-700 fill-mode-both">
       <section>
         <h2 className="text-lg font-semibold text-white mb-4 border-b border-[#232e42] pb-2">
           Profile Information
@@ -215,11 +215,11 @@ function GeneralSettings({ onShowPop }: { onShowPop: (msg: PopNotification) => v
 
         <form onSubmit={handleSave} className="space-y-6">
           {/* Avatar Photo Section */}
-          <div className="space-y-2">
-            <label className="block text-xs font-semibold text-[#94a3b8] uppercase tracking-wider font-mono">
+          <div className="space-y-2 group">
+            <label className="block text-xs font-semibold text-[#94a3b8] uppercase tracking-wider font-mono transition-colors group-hover:text-[#cbd5e1]">
               Profile Photo
             </label>
-            <div className="flex items-center gap-5 bg-[#090d16] border border-[#232e42] rounded p-4">
+            <div className="flex items-center gap-5 bg-[#090d16] border border-[#232e42] rounded p-4 transition-all duration-300 hover:border-[#3b82f6]/40 hover:shadow-[0_0_20px_rgba(59,130,246,0.1)]">
               <div className="relative w-16 h-16 rounded-full overflow-hidden border-2 border-[#3b82f6] bg-[#161c2b] flex items-center justify-center shrink-0">
                 {avatarUrl ? (
                   <img src={avatarUrl} alt="Avatar" className="w-full h-full object-cover" />
@@ -274,7 +274,7 @@ function GeneralSettings({ onShowPop }: { onShowPop: (msg: PopNotification) => v
               required
               value={fullName}
               onChange={(e) => setFullName(e.target.value)}
-              className="w-full px-3 py-2 bg-[#090d16] border border-[#232e42] rounded text-sm text-white focus:outline-none focus:border-[#3b82f6] font-mono"
+              className="w-full px-3 py-2 bg-[#090d16] border border-[#232e42] rounded text-sm text-white focus:outline-none focus:border-[#3b82f6] focus:ring-1 focus:ring-[#3b82f6]/50 hover:border-[#3b82f6]/30 transition-all font-mono shadow-inner"
             />
           </div>
 
@@ -283,7 +283,7 @@ function GeneralSettings({ onShowPop }: { onShowPop: (msg: PopNotification) => v
             <label className="block text-xs font-semibold text-[#94a3b8] uppercase tracking-wider font-mono">
               Email Address
             </label>
-            <div className="px-3 py-2 bg-[#090d16] border border-[#232e42] rounded text-sm text-[#94a3b8] font-mono flex items-center justify-between">
+            <div className="px-3 py-2 bg-[#090d16] border border-[#232e42] rounded text-sm text-[#94a3b8] font-mono flex items-center justify-between hover:border-[#232e42]/80 transition-colors cursor-not-allowed opacity-80">
               <span>{currentUser?.email || 'jashvan467@gmail.com'}</span>
               <span className="text-[10px] text-[#64748b] uppercase font-mono">● Primary SSO</span>
             </div>
@@ -294,7 +294,7 @@ function GeneralSettings({ onShowPop }: { onShowPop: (msg: PopNotification) => v
             <button
               type="submit"
               disabled={isSaving}
-              className="px-5 py-2 bg-[#2563eb] hover:bg-[#1d4ed8] text-white text-xs font-semibold rounded transition-colors font-mono cursor-pointer flex items-center gap-2 disabled:opacity-50"
+              className="px-5 py-2 bg-[#2563eb] hover:bg-[#1d4ed8] text-white text-xs font-semibold rounded transition-all duration-300 transform hover:-translate-y-0.5 hover:shadow-[0_0_20px_rgba(37,99,235,0.4)] active:translate-y-0 active:scale-95 font-mono cursor-pointer flex items-center gap-2 disabled:opacity-50 disabled:hover:translate-y-0 disabled:hover:shadow-none"
             >
               {isSaving ? (
                 <>
@@ -320,7 +320,7 @@ function GeneralSettings({ onShowPop }: { onShowPop: (msg: PopNotification) => v
       </section>
 
       {/* Active Workspace */}
-      <section className="pt-4 border-t border-[#232e42]">
+      <section className="pt-4 border-t border-[#232e42] animate-in fade-in slide-in-from-bottom-6 duration-700 delay-150 fill-mode-both">
         <h2 className="text-lg font-semibold text-white mb-4 border-b border-[#232e42] pb-2">
           Active Workspace
         </h2>
@@ -348,7 +348,7 @@ function DetailRow({ label, value }: { label: string; value: React.ReactNode }) 
   return (
     <div>
       <label className="block text-xs font-medium text-[#64748b] uppercase tracking-wider mb-1 font-mono">{label}</label>
-      <div className="px-3 py-2 bg-[#090d16] border border-[#232e42] rounded text-sm text-white font-mono font-medium">
+      <div className="px-3 py-2 bg-[#090d16] border border-[#232e42] rounded text-sm text-white font-mono font-medium hover:border-[#3b82f6]/30 transition-colors shadow-inner">
         {value}
       </div>
     </div>

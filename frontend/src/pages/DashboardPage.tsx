@@ -1,6 +1,6 @@
 // SentinelTrace Frontend — Dashboard Page (SOC Reference UI)
 
-import { useMemo, useEffect } from 'react';
+import { useMemo, useEffect, useState } from 'react';
 import {
   AlertCircle,
   AlertTriangle,
@@ -12,7 +12,8 @@ import {
   Target,
   TrendingUp,
   Calendar,
-  ChevronRight
+  ChevronRight,
+  RefreshCw
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useWorkspaceStats } from '@/api/hooks';
@@ -23,6 +24,7 @@ import { StatusBadge } from '@/components/threats/SeverityBadge';
 import { formatRelativeTime } from '@/utils';
 
 export function DashboardPage() {
+  const [selectedDate, setSelectedDate] = useState<string>('');
   const { currentWorkspaceId, setCurrentWorkspaceId } = useWorkspaceStore();
   const { data: workspaces } = useWorkspaces();
 
@@ -47,7 +49,8 @@ export function DashboardPage() {
     isLoading,
     isError,
     dataUpdatedAt,
-  } = useWorkspaceStats(activeWorkspaceId);
+    refetch,
+  } = useWorkspaceStats(activeWorkspaceId, selectedDate);
 
   if (!currentWorkspaceId) {
     return (
@@ -94,9 +97,25 @@ export function DashboardPage() {
             <Mail className="w-3.5 h-3.5" />
             <span>Analyze Email</span>
           </Link>
-          <div className="flex items-center gap-2 bg-[#121824] border border-[#232e42] rounded px-3 py-1.5 text-xs text-[hsl(var(--foreground-muted))] font-mono">
+          <button
+            onClick={() => refetch()}
+            disabled={isLoading}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-[#121824] hover:bg-[#1f2a3e] border border-[#232e42] text-white text-xs font-mono font-medium rounded transition-colors disabled:opacity-50"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} />
+            <span>Refresh</span>
+          </button>
+          <div className="relative flex items-center gap-2 bg-[#121824] border border-[#232e42] rounded px-3 py-1.5 text-xs text-[hsl(var(--foreground-muted))] font-mono cursor-pointer hover:bg-[#1f2a3e] transition-colors">
             <Calendar className="w-3.5 h-3.5 text-[hsl(var(--foreground-subtle))]" />
-            <span>Last 24 Hours</span>
+            <span className="pointer-events-none whitespace-nowrap">
+              {selectedDate ? new Date(selectedDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'Last 24 Hours'}
+            </span>
+            <input 
+              type="date" 
+              value={selectedDate} 
+              onChange={(e) => setSelectedDate(e.target.value)} 
+              className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+            />
           </div>
         </div>
       </div>
