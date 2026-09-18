@@ -1,6 +1,6 @@
 // SentinelTrace Frontend — Dashboard Page (SOC Reference UI)
 
-import { useMemo, useEffect, useState } from 'react';
+import { useMemo, useEffect, useState, useRef } from 'react';
 import {
   AlertCircle,
   AlertTriangle,
@@ -25,6 +25,7 @@ import { formatRelativeTime } from '@/utils';
 
 export function DashboardPage() {
   const [selectedDate, setSelectedDate] = useState<string>('');
+  const dateInputRef = useRef<HTMLInputElement>(null);
   const { currentWorkspaceId, setCurrentWorkspaceId } = useWorkspaceStore();
   const { data: workspaces } = useWorkspaces();
 
@@ -98,23 +99,38 @@ export function DashboardPage() {
             <span>Analyze Email</span>
           </Link>
           <button
-            onClick={() => refetch()}
+            onClick={() => {
+              refetch();
+              if (typeof (window as any).triggerSentinelReload === 'function') {
+                (window as any).triggerSentinelReload();
+              }
+            }}
             disabled={isLoading}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-[#121824] hover:bg-[#1f2a3e] border border-[#232e42] text-white text-xs font-mono font-medium rounded transition-colors disabled:opacity-50"
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-[#121824] hover:bg-[#1f2a3e] border border-[#232e42] hover:border-[#38bdf8] text-white text-xs font-mono font-medium rounded transition-all shadow-xs cursor-pointer group active:scale-95 disabled:opacity-50"
           >
-            <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} />
+            <RefreshCw className={`w-3.5 h-3.5 group-hover:rotate-180 transition-transform duration-500 ${isLoading ? 'animate-spin' : ''}`} />
             <span>Refresh</span>
           </button>
-          <div className="relative flex items-center gap-2 bg-[#121824] border border-[#232e42] rounded px-3 py-1.5 text-xs text-[hsl(var(--foreground-muted))] font-mono cursor-pointer hover:bg-[#1f2a3e] transition-colors">
+          <div 
+            onClick={() => {
+              try {
+                dateInputRef.current?.showPicker();
+              } catch (e) {
+                dateInputRef.current?.focus();
+              }
+            }}
+            className="relative flex items-center gap-2 bg-[#121824] border border-[#232e42] hover:border-[#38bdf8] rounded px-3 py-1.5 text-xs text-[hsl(var(--foreground-muted))] font-mono cursor-pointer hover:bg-[#1f2a3e] transition-colors"
+          >
             <Calendar className="w-3.5 h-3.5 text-[hsl(var(--foreground-subtle))]" />
-            <span className="pointer-events-none whitespace-nowrap">
+            <span className="whitespace-nowrap select-none">
               {selectedDate ? new Date(selectedDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'Last 24 Hours'}
             </span>
             <input 
+              ref={dateInputRef}
               type="date" 
               value={selectedDate} 
               onChange={(e) => setSelectedDate(e.target.value)} 
-              className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+              className="absolute opacity-0 w-0 h-0 pointer-events-none"
             />
           </div>
         </div>
