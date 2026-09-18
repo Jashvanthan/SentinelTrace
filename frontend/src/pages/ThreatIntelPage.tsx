@@ -109,7 +109,7 @@ export function ThreatIntelPage() {
   };
 
   return (
-    <div className="space-y-6 flex flex-col h-full max-w-7xl mx-auto">
+    <div className="space-y-6 flex flex-col h-full max-w-7xl mx-auto animate-in fade-in zoom-in-95 duration-500">
       {/* Header & Page Description */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
@@ -375,14 +375,14 @@ export function ThreatIntelPage() {
             ) : (
               <table className="w-full text-left border-collapse text-xs">
                 <thead>
-                  <tr className="border-b border-[hsl(var(--border))] bg-[hsl(var(--surface-2))] text-[hsl(var(--foreground-subtle))] uppercase tracking-wider">
-                    <th className="px-4 py-3 font-medium">Indicator</th>
-                    <th className="px-4 py-3 font-medium">Type</th>
-                    <th className="px-4 py-3 font-medium">Associated Email</th>
-                    <th className="px-4 py-3 font-medium">Verdict</th>
-                    <th className="px-4 py-3 font-medium">Threat Score</th>
-                    <th className="px-4 py-3 font-medium">Last Seen</th>
-                    <th className="px-4 py-3 font-medium text-right">Actions</th>
+                  <tr className="border-b border-[hsl(var(--border))] bg-[#161c2b] text-[#38bdf8] uppercase tracking-wider text-[10px] font-bold font-mono shadow-sm">
+                    <th className="px-4 py-3">Indicator</th>
+                    <th className="px-4 py-3">Type</th>
+                    <th className="px-4 py-3">Associated Email</th>
+                    <th className="px-4 py-3">Verdict</th>
+                    <th className="px-4 py-3">Threat Score</th>
+                    <th className="px-4 py-3">Last Seen</th>
+                    <th className="px-4 py-3 text-right">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[hsl(var(--border))]">
@@ -395,8 +395,8 @@ export function ThreatIntelPage() {
                         key={ioc.id} 
                         onClick={() => setSelectedIoc(ioc)}
                         className={cn(
-                          "hover:bg-[hsl(var(--surface-2))] cursor-pointer transition-colors group",
-                          isSelected && "bg-[hsl(var(--surface-2))] border-l-2 border-l-[hsl(var(--accent))]"
+                          "hover:bg-[#1f2a3e] cursor-pointer transition-colors group even:bg-[hsl(var(--surface-2)/0.5)]",
+                          isSelected && "bg-[#1f2a3e] border-l-2 border-l-[#38bdf8]"
                         )}
                       >
                         <td className="px-4 py-3 font-mono font-medium text-[hsl(var(--foreground))] max-w-[220px]">
