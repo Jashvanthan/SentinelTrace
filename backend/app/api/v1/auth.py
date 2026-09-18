@@ -24,8 +24,9 @@ import secrets
 from datetime import UTC, datetime, timedelta, timezone
 from jose import jwt
 
-from fastapi import APIRouter, Cookie, Depends, HTTPException, Query, Request, Response, status
+from fastapi import APIRouter, Cookie, Depends, HTTPException, Query, Request, Response, status, BackgroundTasks
 from fastapi.responses import RedirectResponse
+from sqlalchemy import select, delete
 
 from app.core.config import get_settings
 from app.core.deps import CurrentUser, DbSession
@@ -39,6 +40,8 @@ from app.schemas.auth import (
     UserRegisterRequest,
     UserResponse,
     UserProfileUpdateRequest,
+    ForgotPasswordRequest,
+    ResetPasswordRequest,
 )
 from app.services.auth_service import (
     authenticate_user,
@@ -54,6 +57,11 @@ from app.services.auth_service import (
     validate_and_consume_oauth_state,
 )
 from app.models.oauth import OAuthState
+from app.models.user import User
+from app.models.refresh_session import RefreshSession
+from app.utils.email import send_reset_password_email
+from app.core.security import create_password_reset_token, verify_password_reset_token
+from app.services.password_service import hash_password
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 settings = get_settings()
@@ -166,15 +174,6 @@ async def change_password(
     """
     return await change_user_password(db, current_user, payload, request, response)
 
-from app.schemas.auth import ForgotPasswordRequest, ResetPasswordRequest
-from app.utils.email import send_reset_password_email
-from app.core.security import create_password_reset_token, verify_password_reset_token
-from app.services.password_service import hash_password
-from app.models.user import User
-from sqlalchemy import select
-
-from fastapi import APIRouter, Cookie, Depends, HTTPException, Query, Request, Response, status, BackgroundTasks
-
 @router.post("/forgot-password")
 async def forgot_password(
     payload: ForgotPasswordRequest,
@@ -190,9 +189,6 @@ async def forgot_password(
     result = await db.execute(stmt)
     user = result.scalar_one_or_none()
     
-    import logging
-    logger = logging.getLogger(__name__)
-    
     if user:
         logger.info(f"User {payload.email} found in database. Queuing email.")
         token = create_password_reset_token(user.email)
@@ -206,7 +202,7 @@ async def forgot_password(
 async def reset_password(
     payload: ResetPasswordRequest,
     db: DbSession,
-):
+) -> dict:
     """
     Reset a user's password using a valid reset token.
     """
@@ -223,8 +219,6 @@ async def reset_password(
         
     user.password_hash = hash_password(payload.new_password)
     # Revoke all existing sessions for security
-    from app.models.refresh_session import RefreshSession
-    from sqlalchemy import delete
     del_stmt = delete(RefreshSession).where(RefreshSession.user_id == user.id)
     await db.execute(del_stmt)
     await db.commit()
