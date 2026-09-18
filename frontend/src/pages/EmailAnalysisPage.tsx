@@ -50,7 +50,7 @@ export function EmailAnalysisPage() {
   };
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-5 flex flex-col flex-1 h-full">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
@@ -189,8 +189,8 @@ export function EmailAnalysisPage() {
       </div>
 
       {/* Table */}
-      <div className="card-surface overflow-hidden">
-        <div className="overflow-x-auto">
+      <div className="card-surface flex-1 min-h-0 flex flex-col overflow-hidden">
+        <div className="overflow-x-auto flex-1">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-[hsl(var(--border))] bg-[hsl(var(--surface-2))]">

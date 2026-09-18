@@ -84,7 +84,7 @@ export function DashboardPage() {
   const lowPct = totalRecent > 0 ? Math.max(0, 100 - critPct - highPct - medPct) : 0;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 flex flex-col flex-1 h-full">
       {/* ── Page Header ─────────────────────────────────────────────────── */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
@@ -198,7 +198,7 @@ export function DashboardPage() {
       </div>
 
       {/* ── Lower Section Grid: Risk Distribution + Active Investigations ── */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 flex-1">
         {/* Risk Distribution Card */}
         <div className="bg-[#121824] border border-[#232e42] rounded-md p-5 flex flex-col justify-between">
           <div>
