@@ -84,7 +84,7 @@ export function DashboardPage() {
   const lowPct = totalRecent > 0 ? Math.max(0, 100 - critPct - highPct - medPct) : 0;
 
   return (
-    <div className="space-y-6 flex flex-col flex-1 h-full">
+    <div className="space-y-6 flex flex-col flex-1">
       {/* ── Page Header ─────────────────────────────────────────────────── */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>

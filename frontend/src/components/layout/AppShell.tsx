@@ -69,7 +69,7 @@ export function AppShell() {
   };
 
   return (
-    <div className="flex h-screen overflow-hidden bg-[#090d16] text-[#f1f5f9]">
+    <div className="fixed inset-0 flex overflow-hidden bg-[#090d16] text-[#f1f5f9]">
       <AnimatedFavicon />
       <Orbit3DWidget />
       {/* ── MOBILE DRAWER BACKDROP ─────────────────────────────────────────── */}
