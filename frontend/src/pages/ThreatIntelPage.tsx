@@ -375,7 +375,7 @@ export function ThreatIntelPage() {
             ) : (
               <table className="w-full text-left border-collapse text-xs">
                 <thead>
-                  <tr className="border-b border-[hsl(var(--border))] bg-[#161c2b] text-[#38bdf8] uppercase tracking-wider text-[10px] font-bold font-mono shadow-sm">
+                  <tr className="border-b border-[hsl(var(--border))] bg-[#161c2b] text-[#38bdf8] uppercase tracking-wider text-sm font-semibold shadow-sm">
                     <th className="px-4 py-3">Indicator</th>
                     <th className="px-4 py-3">Type</th>
                     <th className="px-4 py-3">Associated Email</th>
