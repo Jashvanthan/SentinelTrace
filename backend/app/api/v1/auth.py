@@ -6,63 +6,80 @@ Endpoints:
   POST /auth/login                       Email/password login
   POST /auth/refresh                     Rotate access token via refresh cookie
   POST /auth/logout                      Revoke refresh token
+  POST /auth/logout-all                  Revoke all user refresh sessions
   GET  /auth/me                          Get current user info
-  GET  /auth/google?intent=login|register   Get Google OAuth URL (with intent)
+  PATCH/PUT/POST /auth/me                Update current user info
+  POST /auth/change-password             Change user password
+  POST /auth/forgot-password             Send reset password link
+  POST /auth/reset-password              Reset password with token
+  GET  /auth/events-ticket               Generate short-lived SSE ticket
+  GET  /auth/google?intent=login|register Get Google OAuth URL
   GET  /auth/google/callback             Handle Google OAuth callback
-  POST /auth/google/complete-registration  Finalize Google registration (pending token)
-
-Google OAuth security model:
-  - intent=login  → Only logs in EXISTING SentinelTrace accounts
-  - intent=register → Creates a NEW SentinelTrace account via pending token flow
-
-A successful Google OAuth callback NEVER automatically creates a SentinelTrace
-account unless the user explicitly completes the registration step.
+  POST /auth/google/complete-registration Finalize Google registration
 """
 from __future__ import annotations
 
+import logging
 import secrets
+import urllib.parse
 from datetime import UTC, datetime, timedelta, timezone
-from jose import jwt
+from typing import Any
 
-from fastapi import APIRouter, Cookie, Depends, HTTPException, Query, Request, Response, status, BackgroundTasks
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    Cookie,
+    Depends,
+    HTTPException,
+    Query,
+    Request,
+    Response,
+    status,
+)
 from fastapi.responses import RedirectResponse
-from sqlalchemy import select, delete
+from jose import jwt
+from sqlalchemy import delete, select
 
 from app.core.config import get_settings
 from app.core.deps import CurrentUser, DbSession
-from app.core.security import REFRESH_TOKEN_COOKIE_NAME
+from app.core.security import (
+    REFRESH_TOKEN_COOKIE_NAME,
+    create_password_reset_token,
+    verify_password_reset_token,
+)
+from app.models.oauth import OAuthState
+from app.models.refresh_session import RefreshSession
+from app.models.user import User
 from app.schemas.auth import (
     ChangePasswordRequest,
+    ForgotPasswordRequest,
     GoogleOAuthURLResponse,
     GoogleRegistrationRequest,
     LoginRequest,
+    ResetPasswordRequest,
     TokenResponse,
+    UserProfileUpdateRequest,
     UserRegisterRequest,
     UserResponse,
-    UserProfileUpdateRequest,
-    ForgotPasswordRequest,
-    ResetPasswordRequest,
 )
 from app.services.auth_service import (
     authenticate_user,
     change_user_password,
-    logout_user,
+    create_google_pending_token,
+    create_oauth_state,
+    login_google_user,
     logout_all_user,
+    logout_user,
+    register_google_user,
     register_user,
     rotate_refresh_token,
-    login_google_user,
-    create_google_pending_token,
-    register_google_user,
-    create_oauth_state,
-    validate_and_consume_oauth_state,
 )
-from app.models.oauth import OAuthState
-from app.models.user import User
-from app.models.refresh_session import RefreshSession
-from app.utils.email import send_reset_password_email
-from app.core.security import create_password_reset_token, verify_password_reset_token
+from pydantic import BaseModel, EmailStr
 from app.services.password_service import hash_password
+from app.services.smtp_service import smtp_service
+from app.utils.email import send_reset_password_email
 
+logger = logging.getLogger("sentineltrace.auth")
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 settings = get_settings()
 
@@ -70,15 +87,50 @@ settings = get_settings()
 _VALID_INTENTS = {"login", "register"}
 
 
+class WelcomeEmailRequest(BaseModel):
+    email: EmailStr
+    name: str | None = None
+    workspace_name: str | None = "Personal Workspace"
+    application_url: str | None = None
+
+
 @router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
 async def register(
     payload: UserRegisterRequest,
     db: DbSession,
     request: Request,
-):
+    background_tasks: BackgroundTasks,
+) -> UserResponse:
     """Register a new local user account."""
     user = await register_user(db, payload, request)
+    # Dispatch enterprise branded HTML welcome email via Gmail SMTP
+    background_tasks.add_task(
+        smtp_service.dispatch_welcome_email,
+        email=user.email,
+        name=user.full_name,
+        workspace_name="Personal Workspace",
+        platform_url=settings.FRONTEND_URL,
+    )
     return user
+
+
+@router.post("/welcome-email")
+async def trigger_welcome_email(
+    payload: WelcomeEmailRequest,
+    background_tasks: BackgroundTasks,
+):
+    """
+    Manually or programmatically trigger an enterprise dark-mode HTML welcome email
+    via SentinelTrace's verified Gmail SMTP service.
+    """
+    background_tasks.add_task(
+        smtp_service.dispatch_welcome_email,
+        email=str(payload.email),
+        name=payload.name,
+        workspace_name=payload.workspace_name or "Personal Workspace",
+        platform_url=payload.application_url or settings.FRONTEND_URL,
+    )
+    return {"status": "QUEUED", "message": f"Welcome email queued for {payload.email}"}
 
 
 @router.post("/login", response_model=TokenResponse)
@@ -87,7 +139,7 @@ async def login(
     db: DbSession,
     request: Request,
     response: Response,
-):
+) -> TokenResponse:
     """
     Authenticate with email and password.
 
@@ -104,7 +156,7 @@ async def refresh(
     request: Request,
     response: Response,
     refresh_token_cookie: str | None = Cookie(None, alias=REFRESH_TOKEN_COOKIE_NAME),
-):
+) -> TokenResponse:
     """
     Rotate refresh token and issue a new access token.
     The refresh token is read from the HttpOnly cookie.
@@ -121,7 +173,7 @@ async def logout(
     response: Response,
     current_user: CurrentUser,
     refresh_token_cookie: str | None = Cookie(None, alias=REFRESH_TOKEN_COOKIE_NAME),
-):
+) -> None:
     """Revoke the current refresh token and clear the cookie."""
     await logout_user(db, refresh_token_cookie, current_user.id, response)
 
@@ -131,13 +183,13 @@ async def logout_all(
     db: DbSession,
     response: Response,
     current_user: CurrentUser,
-):
+) -> None:
     """Revoke all refresh sessions for the user and clear the cookie."""
     await logout_all_user(db, current_user.id, response)
 
 
 @router.get("/me", response_model=UserResponse)
-async def get_me(current_user: CurrentUser):
+async def get_me(current_user: CurrentUser) -> UserResponse:
     """Return the currently authenticated user's profile."""
     return current_user
 
@@ -149,12 +201,13 @@ async def update_me(
     payload: UserProfileUpdateRequest,
     db: DbSession,
     current_user: CurrentUser,
-):
+) -> UserResponse:
     """Update current user's profile (full_name, avatar_url) in PostgreSQL database."""
     if payload.full_name is not None:
         current_user.full_name = payload.full_name
     if payload.avatar_url is not None:
         current_user.avatar_url = payload.avatar_url
+    db.add(current_user)
     await db.commit()
     await db.refresh(current_user)
     return current_user
@@ -167,19 +220,20 @@ async def change_password(
     current_user: CurrentUser,
     request: Request,
     response: Response,
-):
+) -> TokenResponse:
     """
     Safely update the authenticated user's password.
     Hashes with Argon2id, invalidates old sessions, and issues fresh tokens.
     """
     return await change_user_password(db, current_user, payload, request, response)
 
+
 @router.post("/forgot-password")
 async def forgot_password(
     payload: ForgotPasswordRequest,
     db: DbSession,
     background_tasks: BackgroundTasks,
-):
+) -> dict[str, str]:
     """
     Generate and send a password reset email if the user exists.
     Always returns success to prevent email enumeration.
@@ -188,51 +242,54 @@ async def forgot_password(
     stmt = select(User).where(User.email == email)
     result = await db.execute(stmt)
     user = result.scalar_one_or_none()
-    
+
     if user:
         logger.info(f"User {payload.email} found in database. Queuing email.")
         token = create_password_reset_token(user.email)
         background_tasks.add_task(send_reset_password_email, user.email, token)
     else:
         logger.warning(f"Forgot password requested for {payload.email}, but user does NOT exist in the database.")
-        
+
     return {"message": "If that email exists in our system, you will receive a password reset link shortly."}
+
 
 @router.post("/reset-password")
 async def reset_password(
     payload: ResetPasswordRequest,
     db: DbSession,
-) -> dict:
-    """
-    Reset a user's password using a valid reset token.
-    """
+) -> dict[str, str]:
+    """Reset a user's password using a valid reset token."""
     email = verify_password_reset_token(payload.token)
     if not email:
         raise HTTPException(status_code=400, detail="Invalid or expired reset token")
-        
+
     stmt = select(User).where(User.email == email)
     result = await db.execute(stmt)
     user = result.scalar_one_or_none()
-    
+
     if not user:
         raise HTTPException(status_code=400, detail="Invalid or expired reset token")
-        
+
     user.password_hash = hash_password(payload.new_password)
     # Revoke all existing sessions for security
     del_stmt = delete(RefreshSession).where(RefreshSession.user_id == user.id)
     await db.execute(del_stmt)
     await db.commit()
-    
+
     return {"message": "Password has been reset successfully. You can now login."}
 
 
-
 @router.get("/events-ticket")
-async def get_events_ticket(current_user: CurrentUser):
+async def get_events_ticket(current_user: CurrentUser) -> dict[str, str]:
     """Generate a short-lived, single-use ticket for SSE authentication."""
     expire = datetime.now(timezone.utc) + timedelta(seconds=60)
     to_encode = {"sub": str(current_user.id), "type": "sse", "exp": expire}
-    encoded_jwt = jwt.encode(to_encode, settings.JWT_SECRET, algorithm=settings.JWT_ALGORITHM)
+    secret = (
+        settings.JWT_SECRET.get_secret_value()
+        if hasattr(settings.JWT_SECRET, "get_secret_value")
+        else str(settings.JWT_SECRET)
+    )
+    encoded_jwt = jwt.encode(to_encode, secret, algorithm=settings.JWT_ALGORITHM)
     return {"ticket": encoded_jwt}
 
 
@@ -245,19 +302,18 @@ def _get_google_redirect_uri(request: Request) -> str:
 
     proto = request.headers.get("x-forwarded-proto") or request.url.scheme
     host = request.headers.get("x-forwarded-host") or request.url.netloc
-    
+
     if "onrender.com" in host:
         proto = "https"
-    
+
     if host and "localhost" not in host and "127.0.0.1" not in host:
         return f"{proto}://{host}/api/v1/auth/google/callback"
-        
+
     return settings.GOOGLE_REDIRECT_URI or "http://localhost:8000/api/v1/auth/google/callback"
 
 
 def _get_frontend_url(request: Request) -> str:
     """Resolve live frontend URL dynamically."""
-    settings = get_settings()
     if settings.FRONTEND_URL and "localhost" not in settings.FRONTEND_URL and "127.0.0.1" not in settings.FRONTEND_URL:
         return settings.FRONTEND_URL.rstrip("/")
     origin = request.headers.get("origin")
@@ -270,7 +326,7 @@ def _get_frontend_url(request: Request) -> str:
         if p.scheme and p.netloc and "localhost" not in p.netloc and "127.0.0.1" not in p.netloc:
             return f"{p.scheme}://{p.netloc}".rstrip("/")
     host = request.headers.get("x-forwarded-host") or request.url.netloc or ""
-    if "onrender.com" in host or settings.APP_ENV == "production" or settings.is_production:
+    if "onrender.com" in host or settings.APP_ENV == "production" or getattr(settings, "is_production", False):
         return "https://sentinel-trace-two.vercel.app"
     return settings.FRONTEND_URL or "http://localhost:5173"
 
@@ -281,13 +337,10 @@ async def google_oauth_start(
     request: Request,
     response: Response,
     intent: str = Query(default="login", description="OAuth intent: 'login' or 'register'"),
-):
+) -> GoogleOAuthURLResponse:
     """
     Generate the Google OAuth 2.0 authorization URL and secure state.
     Binds the state to a browser_nonce stored in an HttpOnly, Lax cookie.
-
-    intent=login   → Only logs in EXISTING SentinelTrace accounts
-    intent=register → Initiates registration flow for NEW accounts
     """
     if not settings.GOOGLE_CLIENT_ID or not settings.GOOGLE_CLIENT_SECRET:
         raise HTTPException(
@@ -295,16 +348,14 @@ async def google_oauth_start(
             "Google OAuth is not configured on this server",
         )
 
-    # Validate intent
     if intent not in _VALID_INTENTS:
         raise HTTPException(
             status.HTTP_400_BAD_REQUEST,
-            f"Invalid intent '{intent}'. Must be one of: {list(_VALID_INTENTS)}"
+            f"Invalid intent '{intent}'. Must be one of: {list(_VALID_INTENTS)}",
         )
 
     from authlib.integrations.httpx_client import AsyncOAuth2Client
 
-    # Extract initiating origin (e.g. https://sentinel-trace-two.vercel.app)
     req_origin = request.headers.get("origin") or ""
     if not req_origin and request.headers.get("referer"):
         from urllib.parse import urlparse
@@ -317,8 +368,7 @@ async def google_oauth_start(
 
     state_nonce = secrets.token_urlsafe(32)
     stored_nonce_payload = f"{intent}|{req_origin}|{secrets.token_urlsafe(16)}"
-    
-    # Store state in DB (bound to browser nonce, intent, and originating frontend)
+
     await create_oauth_state(db, state_nonce, stored_nonce_payload)
     await db.commit()
 
@@ -326,7 +376,7 @@ async def google_oauth_start(
     client = AsyncOAuth2Client(
         client_id=settings.GOOGLE_CLIENT_ID,
         redirect_uri=google_redirect_uri,
-        scope="openid email profile",  # ONLY identity scopes
+        scope="openid email profile",
     )
     auth_url, _ = client.create_authorization_url(
         "https://accounts.google.com/o/oauth2/v2/auth",
@@ -334,16 +384,15 @@ async def google_oauth_start(
         access_type="offline",
         prompt="consent",
     )
-    
-    # Encode intent into state cookie (safe — state is also in DB)
-    is_prod = settings.is_production
+
+    is_prod = getattr(settings, "is_production", False)
     response.set_cookie(
         key="st_oauth_nonce",
         value=stored_nonce_payload,
         httponly=True,
         secure=is_prod,
         samesite="none" if is_prod else "lax",
-        max_age=600,  # 10 minutes
+        max_age=600,
         path="/",
     )
     response.set_cookie(
@@ -355,7 +404,7 @@ async def google_oauth_start(
         max_age=600,
         path="/",
     )
-    
+
     return GoogleOAuthURLResponse(authorization_url=auth_url, state=state_nonce)
 
 
@@ -368,27 +417,16 @@ async def google_oauth_callback(
     state: str | None = None,
     error: str | None = None,
     error_description: str | None = None,
-):
+) -> RedirectResponse:
     """
-    Handle Google OAuth 2.0 callback.
-
-    STRICT SEPARATION:
-    - If ExternalIdentity exists → login → redirect /login?google_auth=success&token=<jwt>
-    - If account is LOCAL → collision → redirect /login?error=account_exists
-    - If unknown identity + intent=login → redirect /login?error=google_not_registered
-    - If unknown identity + intent=register → issue pending token → redirect /login?google_pending=<token>
+    Handle Google OAuth 2.0 callback with strict state verification.
     """
     frontend_url = _get_frontend_url(request)
-    import urllib.parse
-    import logging
-    logger = logging.getLogger("sentineltrace.auth")
 
-    # Clear state cookies safely
-    is_prod = settings.is_production
+    is_prod = getattr(settings, "is_production", False)
     response.delete_cookie("st_oauth_nonce", path="/", samesite="none" if is_prod else "lax")
     response.delete_cookie("st_oauth_intent", path="/", samesite="none" if is_prod else "lax")
 
-    # If Google redirected with an error (e.g. user denied consent)
     if error:
         err_detail = urllib.parse.quote(error_description or error)
         return RedirectResponse(
@@ -409,7 +447,6 @@ async def google_oauth_callback(
         )
 
     try:
-        # Validate state from DB
         state_record = await db.get(OAuthState, state)
         if not state_record:
             return RedirectResponse(
@@ -417,7 +454,6 @@ async def google_oauth_callback(
                 status_code=status.HTTP_302_FOUND,
             )
 
-        # Determine intent and originating frontend from stored state record
         intent = "login"
         if "|" in state_record.browser_nonce:
             parts = state_record.browser_nonce.split("|")
@@ -427,13 +463,16 @@ async def google_oauth_callback(
         elif ":" in state_record.browser_nonce:
             intent = state_record.browser_nonce.split(":", 1)[0]
         elif request.cookies.get("st_oauth_intent") in _VALID_INTENTS:
-            intent = request.cookies.get("st_oauth_intent")
+            intent = request.cookies.get("st_oauth_intent") or "login"
 
         if intent not in _VALID_INTENTS:
             intent = "login"
 
-        # Check expiration
-        if state_record.expires_at < datetime.now(UTC):
+        state_exp = state_record.expires_at
+        if state_exp.tzinfo is None:
+            state_exp = state_exp.replace(tzinfo=UTC)
+
+        if state_exp < datetime.now(UTC):
             await db.delete(state_record)
             await db.commit()
             return RedirectResponse(
@@ -441,11 +480,9 @@ async def google_oauth_callback(
                 status_code=status.HTTP_302_FOUND,
             )
 
-        # Consume state to guarantee single-use
         await db.delete(state_record)
         await db.commit()
 
-        # Exchange Authorization Code for Tokens via authlib AsyncOAuth2Client
         from authlib.integrations.httpx_client import AsyncOAuth2Client
         import httpx
 
@@ -460,19 +497,17 @@ async def google_oauth_callback(
             code=code,
         )
 
-        id_info: dict = {}
-        # Fetch user info directly using Google's userinfo endpoint with the access token
+        id_info: dict[str, Any] = {}
         access_token = token_data.get("access_token")
         if access_token:
             async with httpx.AsyncClient(timeout=15.0) as http_client:
                 userinfo_resp = await http_client.get(
                     "https://www.googleapis.com/oauth2/v3/userinfo",
-                    headers={"Authorization": f"Bearer {access_token}"}
+                    headers={"Authorization": f"Bearer {access_token}"},
                 )
                 if userinfo_resp.status_code == 200:
                     id_info = userinfo_resp.json()
 
-        # Fallback to ID token if userinfo endpoint didn't provide sub/email
         if not id_info.get("sub") or not id_info.get("email"):
             raw_id_token = token_data.get("id_token")
             if raw_id_token:
@@ -488,41 +523,32 @@ async def google_oauth_callback(
                     )
                     id_info.update(verified_claims)
                 except Exception as fallback_err:
-                    logger.warning(f"Google ID token JWKS verification fallback error: {fallback_err}")
-                    # Unverified decode claims as last resort
+                    logger.warning(f"Google ID token JWKS fallback: {fallback_err}")
                     claims = jwt.get_unverified_claims(raw_id_token)
                     id_info.update(claims)
 
         if not id_info.get("sub") or not id_info.get("email"):
             raise ValueError("Failed to obtain verified identity from Google")
 
-        # Attempt login for existing identity
-        token_result = await login_google_user(
-            db, id_info, request, response, intent=intent
-        )
+        token_result = await login_google_user(db, id_info, request, response, intent=intent)
 
         if token_result is not None:
-            # ── CASE A: Existing Google identity → LOGIN ──
             await db.commit()
             return RedirectResponse(
                 url=f"{frontend_url}/login?google_auth=success&token={token_result.access_token}",
                 status_code=status.HTTP_302_FOUND,
             )
 
-        # ── CASE C: Unknown Google identity ──
         email = id_info.get("email", "")
         name = id_info.get("name", "")
 
         if intent == "login":
-            # User tried to LOGIN with an unregistered Google account
-            # Do NOT create account, do NOT issue JWT
             await db.commit()
             return RedirectResponse(
                 url=f"{frontend_url}/login?error=google_not_registered&email={urllib.parse.quote(email)}",
                 status_code=status.HTTP_302_FOUND,
             )
         else:
-            # intent == "register" → Issue pending token and redirect to registration
             pending_token, _ = await create_google_pending_token(db, id_info)
             await db.commit()
 
@@ -543,7 +569,7 @@ async def google_oauth_callback(
         if e.status_code == 409:
             error_code = "account_exists"
             try:
-                if 'id_info' in locals() and isinstance(id_info, dict) and id_info.get("email"):
+                if "id_info" in locals() and isinstance(id_info, dict) and id_info.get("email"):
                     email_param = f"&email={urllib.parse.quote(id_info.get('email', ''))}"
             except Exception:
                 pass
@@ -570,18 +596,19 @@ async def google_complete_registration(
     db: DbSession,
     request: Request,
     response: Response,
-):
+    background_tasks: BackgroundTasks,
+) -> TokenResponse:
     """
     Complete Google registration using a pending token.
-
-    This is the ONLY endpoint that creates a new SentinelTrace account for
-    a Google identity. The pending token must:
-    - Be signed by SentinelTrace's JWT secret
-    - Have type='google_pending' (NOT 'access' — cannot access protected endpoints)
-    - Not be expired (5 minute TTL)
-    - Have a server-side nonce that has not been consumed
-
     On success: creates User, ExternalIdentity, Workspace, issues real JWT.
-    On failure: full rollback, no partial account created.
     """
-    return await register_google_user(db, payload.pending_token, request, response)
+    token_resp = await register_google_user(db, payload.pending_token, request, response)
+    if token_resp and token_resp.user:
+        background_tasks.add_task(
+            smtp_service.dispatch_welcome_email,
+            email=token_resp.user.email,
+            name=token_resp.user.full_name,
+            workspace_name="Personal Workspace",
+            platform_url=settings.FRONTEND_URL,
+        )
+    return token_resp

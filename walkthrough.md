@@ -120,6 +120,75 @@ tests/test_email_geo_tracing.py::test_routing_classification PASSED      [100%]
 
 ### 4. Comprehensive Site E2E Suite (`e2e_site_test.py`)
 ```text
+================================================================
+         SENTINELTRACE COMPREHENSIVE E2E SITE TEST              
+================================================================
+
+[TEST] 1. Frontend Server (Vite :5173)...
+  --> PASS: Frontend responding with HTTP 200 (length: 906 bytes)
+[TEST] 2. Backend API Health (:8000)...
+  --> PASS: Backend healthy: {'status': 'healthy', 'service': 'sentineltrace-api'}
+[TEST] 3. SOC Analyst / Admin Login...
+  --> PASS: Authenticated as admin@sentineltrace.io (role: ADMIN)
+[TEST] 4. Current User Session Verification...
+  --> PASS: Verified current user: Admin User (139697d9-6a96-41c2-a07b-192433d5e1fe)
+[TEST] 5. Tenant Workspaces Isolation...
+  --> PASS: Found 1 workspace(s). Active workspace: 'Primary SOC Workspace' (ID: b4bead26-41f9-45ee-ad42-11ddff818a76)
+[TEST] 6. Workspace SOC Dashboard Statistics...
+  --> PASS: Total Emails Scanned: 1, Threats Detected: 1, Avg Threat Score: 45.0
+[TEST] 7. Threat Intelligence IOC Repository...
+  --> PASS: Loaded 2 IOC(s) in Threat Intel feed.
+[TEST] 8. Neo4j Threat Campaign Correlated Graph...
+  --> PASS: Campaign graph generated: 4 nodes, 3 edges.
+[TEST] 9. Ingest Email & Run AI Forensic Pipeline...
+  --> PASS: Email uploaded and analyzed by Multi-Agent pipeline. ID: badce129-2467-4b4d-a58b-b858f1499fc6, Status: COMPLETE
+[TEST] 10. Verify Email Analysis Detail & AI Findings...
+  --> PASS: Verdict: PHISHING | Severity: HIGH | Score: 75.0/100 | IOCs: 0 | Summary: **Verdict: High-severity phishing attempt impersonating the IRS.** The message u...
+[TEST] 11. Generate Court-Ready PDF Evidence Dossier...
+  --> PASS: Generated tamper-evident PDF report: 5809 bytes | Attachment: attachment; filename="sentineltrace-report-badce129.pdf"
+[TEST] 12. IP Geolocation & ASN Intelligence...
+  --> PASS: IP 8.8.8.8 geolocated: Country=United States, City=San Jose, Org=Google LLC
+
+================================================================
 RESULTS: 12/12 tests passed successfully!
 ALL END-TO-END SYSTEMS OPERATIONAL AND READY!
+================================================================
 ```
+
+### 5. Playwright Browser E2E Test Suite (`npm --prefix frontend test`)
+```text
+Running 46 tests across Chromium workers:
+[1/46] › tests/all-buttons.spec.ts:64:3 › 2. Dashboard: CTA button and View all link PASSED
+[2/46] › tests/all-buttons.spec.ts:171:3 › 5. Campaign Graph: Depth buttons and Refresh PASSED
+[3/46] › tests/all-buttons.spec.ts:81:3 › 3. Email Analysis: Upload form and filters PASSED
+[4/46] › tests/activity-log.spec.ts:9:3 › Activity Log: telemetry cards and filters PASSED
+[5/46] › tests/all-buttons.spec.ts:142:3 › 4. Threat Intel: Live Enrich and panel PASSED
+[6/46] › tests/all-buttons.spec.ts:15:3 › 1. AppShell and Navigation: Sidebar and links PASSED
+[7/46] › tests/all-buttons.spec.ts:236:3 › 7. Integrations: Gmail Sync and Reconnect PASSED
+[8/46] › tests/all-buttons.spec.ts:249:3 › 8. Logout: Header logout button cleanly exits session PASSED
+[9/46] › tests/campaign-graph-interactions.spec.ts:9:3 › Campaign graph controls render properly PASSED
+[10/46] › tests/dashboard-interactions.spec.ts:9:3 › Security overview metrics and feeds PASSED
+[11/46] › tests/dashboard-interactions.spec.ts:34:3 › New Investigation CTA button PASSED
+[12/46] › tests/dashboard-interactions.spec.ts:45:3 › Live email feed item navigation PASSED
+[13/46] › tests/email-analysis-interactions.spec.ts:9:3 › Upload panel toggle button PASSED
+[14/46] › tests/email-analysis-interactions.spec.ts:28:3 › Upload form file selection and submit PASSED
+[15/46] › tests/email-analysis-interactions.spec.ts:62:3 › Search input and filter dropdowns PASSED
+[16/46] › tests/email-analysis-interactions.spec.ts:91:3 › Table row navigation and deletion PASSED
+[17/46] › tests/email-detail-interactions.spec.ts:9:3 › Threat analysis verdict and AI findings PASSED
+[18/46] › tests/email-detail-interactions.spec.ts:37:3 › Campaign graph CTA button PASSED
+[19/46] › tests/email-detail-interactions.spec.ts:48:3 › Back to analyses link PASSED
+[20/46] › tests/forensics-and-geo.spec.ts:5:3 › Geolocation page telemetry PASSED
+[21/46] › tests/forensics-and-geo.spec.ts:26:3 › Digital Forensics workbench PASSED
+[22/46] › tests/forensics-and-geo.spec.ts:41:3 › Campaign Graph loads cleanly PASSED
+[23/46] › tests/live-e2e.spec.ts:4:1 › Live E2E: Login, Dashboard, Forensics, Geo, Graph PASSED
+[24/46] › tests/login-page-all-functions.spec.ts (11 complete functional & OAuth specs) PASSED
+[35/46] › tests/navigation-and-shell.spec.ts (4 shell navigation & workspace specs) PASSED
+[39/46] › tests/settings-and-integrations.spec.ts (3 settings, members & integrations specs) PASSED
+[42/46] › tests/smoke.spec.ts:9:3 › Login and view dashboard PASSED
+[43/46] › tests/threat-intel-interactions.spec.ts (3 indicator & investigation panel specs) PASSED
+
+==============================
+46 passed (56.1s) — 100% Success
+==============================
+```
+

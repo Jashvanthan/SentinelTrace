@@ -59,7 +59,8 @@ class UserResponse(BaseModel):
 class TokenResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
-    expires_in: int  # seconds
+    expires_in: int  # access token expiry in seconds
+    session_expires_in: int = 86400  # absolute session expiry in seconds (24 hours)
     user: UserResponse
 
 

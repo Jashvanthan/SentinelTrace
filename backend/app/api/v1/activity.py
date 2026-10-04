@@ -3,12 +3,11 @@ SentinelTrace Backend — Activity & Audit Log API
 """
 from __future__ import annotations
 
-import uuid
-from typing import Annotated
+from datetime import datetime
+from typing import Any
 
-from fastapi import APIRouter, Depends, Query, Request
-from sqlalchemy import desc, func, or_, select
-from sqlalchemy.orm import selectinload
+from fastapi import APIRouter, HTTPException, Query, status
+from sqlalchemy import ColumnElement, String, cast, desc, func, or_, select
 
 from app.core.deps import CurrentUser, DbSession
 from app.models.audit_log import AuditLog
@@ -31,7 +30,9 @@ async def list_activity_logs(
     action: str | None = Query(None, description="Filter by action name"),
     outcome: str | None = Query(None, description="Filter by outcome (SUCCESS, FAILURE, DENIED)"),
     search: str | None = Query(None, max_length=128, description="Free text search"),
-):
+    start_date: datetime | None = Query(None, description="Filter events from timestamp"),
+    end_date: datetime | None = Query(None, description="Filter events until timestamp"),
+)-> ActivityLogListResponse:
     """
     List security audit and activity logs with actor details and summary metrics.
     """
@@ -41,7 +42,8 @@ async def list_activity_logs(
         User.full_name.label("user_name"),
     ).outerjoin(User, AuditLog.user_id == User.id)
 
-    filters = []
+    # Explicitly typed to ColumnElement[bool] to allow BinaryExpression, or_(), etc.
+    filters: list[ColumnElement[bool]] = []
 
     if action and action.strip() and action.strip().upper() != "ALL":
         filters.append(AuditLog.action.ilike(f"%{action.strip()}%"))
@@ -49,14 +51,21 @@ async def list_activity_logs(
     if outcome and outcome.strip() and outcome.strip().upper() != "ALL":
         filters.append(AuditLog.outcome.ilike(f"%{outcome.strip()}%"))
 
+    if start_date:
+        filters.append(AuditLog.created_at >= start_date)
+
+    if end_date:
+        filters.append(AuditLog.created_at <= end_date)
+
     if search and search.strip():
         term = f"%{search.strip()}%"
         filters.append(
             or_(
                 AuditLog.action.ilike(term),
                 AuditLog.resource_type.ilike(term),
-                AuditLog.resource_id.ilike(term),
-                AuditLog.ip_address.ilike(term),
+                # Cast to String to safely handle UUID/Integer columns in PostgreSQL
+                cast(AuditLog.resource_id, String).ilike(term),
+                cast(AuditLog.ip_address, String).ilike(term),
                 AuditLog.error_message.ilike(term),
                 User.email.ilike(term),
                 User.full_name.ilike(term),
@@ -66,13 +75,15 @@ async def list_activity_logs(
     if filters:
         base_query = base_query.where(*filters)
 
-    # Count total matching query
-    count_query = select(func.count(AuditLog.id)).outerjoin(User, AuditLog.user_id == User.id)
+    # 1. Count total matching query
+    count_query = select(func.count(AuditLog.id))
+    if search and search.strip():
+        count_query = count_query.outerjoin(User, AuditLog.user_id == User.id)
     if filters:
         count_query = count_query.where(*filters)
     total = await db.scalar(count_query) or 0
 
-    # Execute paginated query
+    # 2. Execute paginated query
     stmt = (
         base_query
         .order_by(AuditLog.created_at.desc())
@@ -82,39 +93,39 @@ async def list_activity_logs(
     result = await db.execute(stmt)
     rows = result.all()
 
-    items: list[ActivityLogItem] = []
-    for log, user_email, user_name in rows:
-        items.append(
-            ActivityLogItem(
-                id=log.id,
-                action=log.action,
-                resource_type=log.resource_type,
-                resource_id=log.resource_id,
-                user_id=log.user_id,
-                user_email=user_email,
-                user_name=user_name,
-                ip_address=log.ip_address,
-                user_agent=log.user_agent,
-                outcome=log.outcome,
-                details=log.details,
-                error_message=log.error_message,
-                created_at=log.created_at,
-            )
+    items = [
+        ActivityLogItem(
+            id=log.id,
+            action=log.action,
+            resource_type=log.resource_type,
+            resource_id=str(log.resource_id) if log.resource_id is not None else None,
+            user_id=log.user_id,
+            user_email=user_email,
+            user_name=user_name,
+            ip_address=str(log.ip_address) if log.ip_address is not None else None,
+            user_agent=log.user_agent,
+            outcome=log.outcome,
+            details=log.details,
+            error_message=log.error_message,
+            created_at=log.created_at,
         )
+        for log, user_email, user_name in rows
+    ]
 
-    # Compute overall summary metrics
-    total_events = await db.scalar(select(func.count(AuditLog.id))) or 0
-    success_count = await db.scalar(
-        select(func.count(AuditLog.id)).where(AuditLog.outcome == "SUCCESS")
-    ) or 0
-    failure_count = await db.scalar(
-        select(func.count(AuditLog.id)).where(AuditLog.outcome.in_(["FAILURE", "FAILED", "DENIED", "ERROR"]))
-    ) or 0
-    unique_users = await db.scalar(
-        select(func.count(func.distinct(AuditLog.user_id))).where(AuditLog.user_id.is_not(None))
-    ) or 0
+    # 3. Optimized summary query (1 query instead of 4 separate table scans)
+    summary_stmt = select(
+        func.count(AuditLog.id).label("total_events"),
+        func.count(AuditLog.id).filter(AuditLog.outcome == "SUCCESS").label("success_count"),
+        func.count(AuditLog.id).filter(
+            AuditLog.outcome.in_(["FAILURE", "FAILED", "DENIED", "ERROR"])
+        ).label("failure_count"),
+        func.count(func.distinct(AuditLog.user_id)).filter(
+            AuditLog.user_id.is_not(None)
+        ).label("unique_users"),
+    )
+    summary_res = (await db.execute(summary_stmt)).one()
 
-    # Top 5 actions
+    # 4. Top 5 actions
     top_actions_stmt = (
         select(AuditLog.action, func.count(AuditLog.id).label("cnt"))
         .group_by(AuditLog.action)
@@ -125,10 +136,10 @@ async def list_activity_logs(
     top_actions = {act: cnt for act, cnt in top_actions_res.all()}
 
     summary = ActivityLogSummary(
-        total_events=total_events,
-        success_count=success_count,
-        failure_count=failure_count,
-        unique_users_count=unique_users,
+        total_events=summary_res.total_events or 0,
+        success_count=summary_res.success_count or 0,
+        failure_count=summary_res.failure_count or 0,
+        unique_users_count=summary_res.unique_users or 0,
         top_actions=top_actions,
     )
 

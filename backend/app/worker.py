@@ -32,6 +32,9 @@ celery_app = Celery(
     backend=settings.REDIS_URL,
 )
 celery_app.conf.task_serializer = "json"
+celery_app.conf.broker_connection_retry_on_startup = False
+celery_app.conf.broker_connection_max_retries = 1
+celery_app.conf.task_publish_retry = False
 
 # Create a synchronous wrapper context for async DB tasks
 engine = create_async_engine(settings.DATABASE_URL, future=True)

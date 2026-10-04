@@ -52,6 +52,21 @@ logger = get_logger("sentineltrace.api.emails")
 MAX_EML_SIZE = 50 * 1024 * 1024  # 50 MB
 
 
+def _is_redis_online() -> bool:
+    """Quick non-blocking check to determine if Redis is reachable."""
+    try:
+        import socket
+        from urllib.parse import urlparse
+        r_parsed = urlparse(settings.REDIS_URL or "redis://localhost:6379/0")
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s.settimeout(0.15)
+        s.connect((r_parsed.hostname or "127.0.0.1", r_parsed.port or 6379))
+        s.close()
+        return True
+    except Exception:
+        return False
+
+
 @router.post("/upload", response_model=AnalysisTriggerResponse, status_code=status.HTTP_202_ACCEPTED)
 async def upload_email(
     background_tasks: BackgroundTasks,
@@ -122,12 +137,34 @@ async def upload_email(
         workspace_id=str(target_workspace_id),
     )
 
-    # Queue asynchronous background analysis via Celery
-    try:
-        analyze_uploaded_eml.delay(str(target_workspace_id), str(analysis_id), raw_bytes.hex())
-    except Exception as queue_err:
-        logger.warning(f"Could not dispatch Celery task, falling back to background_tasks: {queue_err}")
-        background_tasks.add_task(pipeline_helper.run, db, analysis, raw_bytes)
+    # Queue asynchronous background analysis via Celery or local background task
+    celery_dispatched = False
+    if _is_redis_online():
+        try:
+            analyze_uploaded_eml.apply_async(
+                args=[str(target_workspace_id), str(analysis_id), raw_bytes.hex()],
+                retry=False,
+            )
+            celery_dispatched = True
+        except Exception as queue_err:
+            logger.warning(f"Could not dispatch Celery task, falling back to background_tasks: {queue_err}")
+
+    if not celery_dispatched:
+        async def _run_analysis_isolated():
+            from app.db.session import AsyncSessionLocal
+            async with AsyncSessionLocal() as session:
+                sel_res = await session.execute(
+                    select(EmailAnalysis).where(
+                        EmailAnalysis.id == analysis_id,
+                        EmailAnalysis.workspace_id == target_workspace_id,
+                    )
+                )
+                rec = sel_res.scalar_one_or_none()
+                if rec:
+                    p = ThreatAnalysisPipeline()
+                    await p.run(session, rec, raw_bytes)
+                    await session.commit()
+        background_tasks.add_task(_run_analysis_isolated)
 
     await write_audit_log(
         db,
@@ -186,16 +223,20 @@ async def analyze_email_on_demand(
     await db.refresh(analysis)
 
     # Dispatch worker task (Celery + Asyncio fallback)
-    try:
-        from app.worker import analyze_email_job, _async_analyze_email_job
+    celery_dispatched = False
+    if _is_redis_online():
         try:
+            from app.worker import analyze_email_job
             analyze_email_job.delay(str(analysis.workspace_id), str(analysis.id))
-        except Exception:
-            background_tasks.add_task(
-                _async_analyze_email_job, None, str(analysis.workspace_id), str(analysis.id)
-            )
-    except Exception as queue_err:
-        logger.warning(f"Could not dispatch on-demand analysis: {queue_err}")
+            celery_dispatched = True
+        except Exception as queue_err:
+            logger.warning(f"Could not dispatch on-demand analysis: {queue_err}")
+
+    if not celery_dispatched:
+        from app.worker import _async_analyze_email_job
+        background_tasks.add_task(
+            _async_analyze_email_job, None, str(analysis.workspace_id), str(analysis.id)
+        )
 
     await write_audit_log(
         db,

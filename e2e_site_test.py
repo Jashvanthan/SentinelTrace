@@ -3,7 +3,7 @@ import urllib.request
 import urllib.parse
 import sys
 
-API_BASE = "http://localhost:8000/api/v1"
+API_BASE = "http://127.0.0.1:8000/api/v1"
 FE_URL = "http://localhost:5173"
 
 def run_test(name, fn):
@@ -130,9 +130,26 @@ Internal Revenue Service
     with urllib.request.urlopen(req, timeout=45) as resp:
         data = json.loads(resp.read().decode('utf-8'))
         uploaded_analysis_id = data["analysis_id"]
-        status = data["status"]
-        assert status == "COMPLETE", f"Expected analysis status COMPLETE, got {status}"
-        return f"Email uploaded and analyzed by Multi-Agent pipeline. ID: {uploaded_analysis_id}, Status: {status}"
+        initial_status = data["status"]
+        assert initial_status in ("PENDING", "PROCESSING", "COMPLETE"), f"Unexpected initial status: {initial_status}"
+
+    # Poll for completion of background analysis pipeline
+    import time
+    final_status = initial_status
+    for _ in range(30):
+        time.sleep(1)
+        detail_req = urllib.request.Request(f"{API_BASE}/emails/{uploaded_analysis_id}?workspace_id={workspace_id}", headers={"Authorization": f"Bearer {token}"})
+        try:
+            with urllib.request.urlopen(detail_req, timeout=10) as detail_resp:
+                detail_data = json.loads(detail_resp.read().decode('utf-8'))
+                final_status = detail_data.get("status")
+                if final_status in ("COMPLETE", "COMPLETED"):
+                    break
+        except Exception:
+            pass
+
+    assert final_status in ("COMPLETE", "COMPLETED"), f"Expected analysis status COMPLETE, got {final_status}"
+    return f"Email uploaded and analyzed by Multi-Agent pipeline. ID: {uploaded_analysis_id}, Status: {final_status}"
 
 # 10. Email Detail & Forensic Findings
 def test_email_detail():

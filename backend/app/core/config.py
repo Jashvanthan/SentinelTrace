@@ -76,7 +76,8 @@ class Settings(BaseSettings):
     JWT_SECRET: str = Field("sentineltrace-jwt-secret-key-must-be-32-chars-long", min_length=32)
     JWT_ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 15
-    REFRESH_TOKEN_EXPIRE_DAYS: int = 7
+    REFRESH_TOKEN_EXPIRE_DAYS: int = 1
+    SESSION_EXPIRE_HOURS: int = 24
 
     # ── Google OAuth ─────────────────────────────────────────────────────────
     GOOGLE_CLIENT_ID: str = ""

@@ -82,7 +82,7 @@ test.describe('Comprehensive Functional and Non-Functional Buttons Test Suite', 
     await loginAndNavigateTo(page, '/emails');
 
     // Refresh button
-    const refreshBtn = page.getByRole('button', { name: 'Refresh' });
+    const refreshBtn = page.locator('main').getByRole('button', { name: 'Refresh' });
     await expect(refreshBtn).toBeVisible();
     await refreshBtn.click();
 

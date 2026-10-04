@@ -48,7 +48,7 @@ test.describe('Settings Page & Integrations Compound Tests', () => {
     await emailInput.fill('newanalyst@sentineltrace.io');
 
     // Select role
-    const roleSelect = page.locator('div.fixed select');
+    const roleSelect = page.locator('.fixed form select');
     await roleSelect.selectOption('analyst');
 
     // Submit modal form

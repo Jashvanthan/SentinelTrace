@@ -43,6 +43,11 @@ export function LoginPage() {
     const search = location.search || '';
     const params = new URLSearchParams(search.startsWith('?') ? search.slice(1) : search);
 
+    // ── Session Expired Alert ──
+    if (params.get('reason') === 'session_expired') {
+      setFormError('Your session has expired after 24 hours for security. Please sign in again.');
+    }
+
     // ── Case 1: Existing Google user → login success ──
     if (params.has('google_auth') && params.get('google_auth') === 'success') {
       const directToken = params.get('token');
@@ -67,7 +72,7 @@ export function LoginPage() {
       apiClient
         .post('/auth/refresh')
         .then((res) => {
-          setAuth(res.data.user, res.data.access_token);
+          setAuth(res.data.user, res.data.access_token, res.data.session_expires_in);
           setAccessToken(res.data.access_token);
           navigate('/dashboard', { replace: true });
         })
@@ -154,7 +159,7 @@ export function LoginPage() {
     if (mode === 'login') {
       try {
         const data: any = await login.mutateAsync({ email, password });
-        setAuth(data.user, data.access_token);
+        setAuth(data.user, data.access_token, data.session_expires_in);
         setAccessToken(data.access_token);
         navigate('/dashboard', { replace: true });
       } catch (err: any) {
@@ -171,7 +176,7 @@ export function LoginPage() {
         });
         setFormSuccess('Account created successfully! Signing in...');
         const data: any = await login.mutateAsync({ email, password });
-        setAuth(data.user, data.access_token);
+        setAuth(data.user, data.access_token, data.session_expires_in);
         setAccessToken(data.access_token);
 
         // Dispatches EmailJS welcome notification safely (non-blocking)
@@ -420,6 +425,7 @@ export function LoginPage() {
               <span>{formSuccess}</span>
             </div>
           )}
+
 
           {/* Email/Password Form — hidden when google pending is active */}
           {!googlePending && (

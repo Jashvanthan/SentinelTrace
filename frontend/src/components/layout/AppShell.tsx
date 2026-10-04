@@ -61,6 +61,30 @@ export function AppShell() {
     setMobileMenuOpen(false);
   }, [location.pathname]);
 
+  // ── 24-Hour Automatic Session Logout Watcher ──────────────────────────────
+  useEffect(() => {
+    const checkSessionExpiry = () => {
+      const { isSessionExpired, clearAuth } = useAuthStore.getState();
+      if (isSessionExpired()) {
+        try {
+          logout.mutate();
+        } catch {
+          // ignore
+        }
+        clearAuth();
+        useWorkspaceStore.getState().clearWorkspace();
+        navigate('/login?reason=session_expired', { replace: true });
+      }
+    };
+
+    // Check immediately on mount
+    checkSessionExpiry();
+
+    // Check periodically every 30 seconds
+    const interval = setInterval(checkSessionExpiry, 30000);
+    return () => clearInterval(interval);
+  }, [navigate, logout]);
+
   const handleLogout = async () => {
     await logout.mutateAsync();
     useAuthStore.getState().clearAuth();

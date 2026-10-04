@@ -105,7 +105,7 @@ apiClient.interceptors.response.use(
       isRefreshing = true;
 
       try {
-        const { data } = await apiClient.post<{ access_token: string }>('/auth/refresh');
+        const { data } = await apiClient.post<{ access_token: string; session_expires_in?: number }>('/auth/refresh');
         setAccessToken(data.access_token);
         processQueue(null, data.access_token);
         originalRequest.headers['Authorization'] = `Bearer ${data.access_token}`;
@@ -113,8 +113,15 @@ apiClient.interceptors.response.use(
       } catch (refreshError) {
         processQueue(refreshError as Error, null);
         setAccessToken(null);
-        // Redirect to login
-        window.location.href = '/login';
+        try {
+          localStorage.removeItem('sentineltrace-auth');
+        } catch {
+          // Ignore
+        }
+        // Redirect to login with reason
+        if (typeof window !== 'undefined') {
+          window.location.href = '/login?reason=session_expired';
+        }
         return Promise.reject(refreshError);
       } finally {
         isRefreshing = false;

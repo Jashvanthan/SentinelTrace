@@ -341,6 +341,163 @@ def build_confirmation_html(
 </html>"""
 
 
+def build_welcome_html(
+    *,
+    name: str,
+    email: str,
+    workspace_name: str = "Personal Workspace",
+    platform_url: str = "http://localhost:5173",
+    timestamp_str: Optional[str] = None,
+) -> str:
+    """Renders a High-Fidelity Enterprise Dark Mode Welcome Email Template."""
+    safe_name = html.escape(name)
+    safe_email = html.escape(email)
+    safe_workspace = html.escape(workspace_name)
+    now_str = timestamp_str or datetime.now().strftime("%d %b %Y, %I:%M %p")
+
+    return f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Welcome to SentinelTrace</title>
+</head>
+<body style="margin:0; padding:0; background-color:#090d16; font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; color:#e2e8f0; -webkit-font-smoothing:antialiased;">
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background-color:#090d16; padding:40px 16px;">
+    <tr>
+      <td align="center">
+        <!-- Main Card Wrapper -->
+        <table role="presentation" width="100%" max-width="640" style="max-width:640px; background-color:#0f172a; border-radius:12px; border:1px solid #1e293b; overflow:hidden; box-shadow:0 12px 36px rgba(0,0,0,0.45);" cellspacing="0" cellpadding="0" border="0">
+          
+          <!-- Branded Top Header -->
+          <tr>
+            <td style="padding:28px 32px 22px 32px; background:linear-gradient(180deg, #131d35 0%, #0f172a 100%); border-bottom:1px solid #1e293b;">
+              <table width="100%" cellspacing="0" cellpadding="0" border="0">
+                <tr>
+                  <td>
+                    <div style="font-size:11px; font-weight:700; color:#38bdf8; letter-spacing:1.2px; text-transform:uppercase; margin-bottom:6px; font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;">
+                      🛡️ SENTINELTRACE • CYBERSECURITY OPERATIONS
+                    </div>
+                    <div style="font-size:22px; font-weight:800; color:#f8fafc; letter-spacing:-0.3px; line-height:1.3;">
+                      Welcome to SentinelTrace SOC
+                    </div>
+                  </td>
+                  <td align="right" style="vertical-align:top;">
+                    <div style="display:inline-block; font-size:11px; font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; background-color:#14532d; color:#86efac; border:1px solid #22c55e; border-radius:6px; padding:4px 10px; font-weight:700;">
+                      ACTIVE ANALYST
+                    </div>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
+          <!-- Greeting & Intro Card -->
+          <tr>
+            <td style="padding:24px 32px 12px 32px; font-size:14px; line-height:1.6; color:#cbd5e1;">
+              <p style="margin-top:0; font-size:16px; font-weight:600; color:#f1f5f9;">
+                Greetings, {safe_name}!
+              </p>
+              <p>
+                Your SentinelTrace security operations account has been successfully provisioned and initialized on workspace <strong>"{safe_workspace}"</strong>. You now have full access to our multi-agent email threat investigation and security telemetry workbench.
+              </p>
+            </td>
+          </tr>
+
+          <!-- Core SOC Capabilities Grid -->
+          <tr>
+            <td style="padding:4px 32px 18px 32px;">
+              <table width="100%" cellspacing="0" cellpadding="0" border="0" style="background-color:#090d16; border:1px solid #1e293b; border-radius:8px; padding:16px 20px;">
+                <tr>
+                  <td>
+                    <div style="font-size:11px; font-weight:700; color:#94a3b8; text-transform:uppercase; letter-spacing:1px; margin-bottom:12px; font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;">
+                      Active Platform Capabilities
+                    </div>
+                    <div style="font-size:13px; color:#e2e8f0; margin-bottom:8px; line-height:1.5;">
+                      🔬 <strong>Multi-Agent AI Forensics:</strong> Ingest raw .EML samples for automated phishing, spoofing, and BEC threat categorization.
+                    </div>
+                    <div style="font-size:13px; color:#e2e8f0; margin-bottom:8px; line-height:1.5;">
+                      🌐 <strong>IP Geolocation & ASN Mapping:</strong> Trace email received hops, identify Tor exit nodes, commercial VPNs, and adversary infrastructure.
+                    </div>
+                    <div style="font-size:13px; color:#e2e8f0; margin-bottom:8px; line-height:1.5;">
+                      🕸️ <strong>Correlated Threat Graphs:</strong> Automatically cluster indicators of compromise (IOCs) across campaigns with interactive graph views.
+                    </div>
+                    <div style="font-size:13px; color:#e2e8f0; line-height:1.5;">
+                      📋 <strong>Court-Ready Evidence Dossiers:</strong> Generate cryptographic, tamper-evident SHA256 forensic PDF reports for incident response.
+                    </div>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
+          <!-- Account Provisioning Details -->
+          <tr>
+            <td style="padding:0 32px 24px 32px;">
+              <table width="100%" cellspacing="0" cellpadding="0" border="0" style="background-color:#090d16; border:1px solid #1e293b; border-radius:8px; padding:14px 18px;">
+                <tr>
+                  <td width="50%" style="vertical-align:top;">
+                    <div style="font-size:10px; font-weight:700; color:#64748b; font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; text-transform:uppercase; margin-bottom:3px;">
+                      Registered Analyst
+                    </div>
+                    <div style="font-size:13px; font-weight:600; color:#f1f5f9;">
+                      {safe_name}
+                    </div>
+                    <div style="font-size:12px; color:#38bdf8; font-family:ui-monospace, monospace; margin-top:2px;">
+                      {safe_email}
+                    </div>
+                  </td>
+                  <td width="50%" style="vertical-align:top;">
+                    <div style="font-size:10px; font-weight:700; color:#64748b; font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; text-transform:uppercase; margin-bottom:3px;">
+                      Active Workspace
+                    </div>
+                    <div style="font-size:13px; font-weight:600; color:#f1f5f9;">
+                      {safe_workspace}
+                    </div>
+                    <div style="font-size:12px; color:#94a3b8; font-family:ui-monospace, monospace; margin-top:2px;">
+                      Provisioned: {now_str}
+                    </div>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
+          <!-- Primary Call to Action Button -->
+          <tr>
+            <td style="padding:0 32px 28px 32px;" align="center">
+              <table cellspacing="0" cellpadding="0" border="0">
+                <tr>
+                  <td style="padding-right:12px;">
+                    <a href="{platform_url}/dashboard" style="display:inline-block; background-color:#2563eb; color:#ffffff; font-weight:700; font-size:13px; text-decoration:none; padding:12px 26px; border-radius:6px; letter-spacing:0.3px; box-shadow:0 4px 14px rgba(37,99,235,0.4);">
+                      🚀 Launch SOC Dashboard
+                    </a>
+                  </td>
+                  <td>
+                    <a href="{platform_url}/investigate" style="display:inline-block; background-color:#1e293b; color:#e2e8f0; font-weight:600; font-size:13px; text-decoration:none; padding:12px 24px; border-radius:6px; border:1px solid #334155; letter-spacing:0.2px;">
+                      🔬 Upload First Email
+                    </a>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
+          <!-- Card Footer -->
+          <tr>
+            <td style="background-color:#090d16; padding:16px 32px; border-top:1px solid #1e293b; text-align:center; font-size:11px; color:#64748b; font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; line-height:1.5;">
+              SentinelTrace Security Operations & Forensics Desk • Confidential Operational Telemetry<br/>
+              Need support? Contact your administrator at <a href="mailto:jashvan467@gmail.com" style="color:#38bdf8; text-decoration:none;">jashvan467@gmail.com</a>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>"""
+
+
 def _send_smtp_sync(
     *,
     to_email: str,
@@ -457,6 +614,42 @@ class SMTPService:
             "ticket_id": ticket_id,
             "admin_email": target_admin,
             "delivered_via": "GMAIL_SMTP_SSL",
+        }
+
+    @staticmethod
+    async def dispatch_welcome_email(
+        *,
+        email: str,
+        name: Optional[str] = None,
+        workspace_name: str = "Personal Workspace",
+        platform_url: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Dispatches a branded HTML welcome email to newly registered user via Gmail SMTP."""
+        recipient_name = name or (email.split("@")[0] if "@" in email else "Analyst")
+        base_url = platform_url or settings.FRONTEND_URL or "http://localhost:5173"
+        now_str = datetime.now().strftime("%d %b %Y, %I:%M %p")
+        subject = "🛡️ Welcome to SentinelTrace — Unified SOC & Email Threat Intelligence"
+
+        welcome_html = build_welcome_html(
+            name=recipient_name,
+            email=email,
+            workspace_name=workspace_name,
+            platform_url=base_url,
+            timestamp_str=now_str,
+        )
+
+        sent = await asyncio.to_thread(
+            _send_smtp_sync,
+            to_email=email,
+            subject=subject,
+            html_content=welcome_html,
+            reply_to=settings.SUPPORT_RECEIVER_EMAIL or settings.SMTP_USER,
+        )
+
+        return {
+            "success": sent,
+            "to_email": email,
+            "delivered_via": "GMAIL_SMTP_SSL" if sent else "FAILED",
         }
 
 

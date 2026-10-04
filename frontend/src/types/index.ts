@@ -20,6 +20,7 @@ export interface TokenResponse {
   access_token: string;
   token_type: string;
   expires_in: number;
+  session_expires_in?: number; // Absolute session duration in seconds (24 hours)
   user: User;
 }
 

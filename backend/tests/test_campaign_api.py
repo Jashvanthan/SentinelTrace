@@ -14,15 +14,17 @@ async def test_env():
     """Sets up User A with Workspace A, and User B with Workspace B, plus sample EmailAnalyses."""
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
         # Create User A & Workspace A
-        await ac.post("/api/v1/auth/register", json={"email": "usera_camp@test.com", "password": "SuperSecretPassword123", "full_name": "User A"})
-        resp_a = await ac.post("/api/v1/auth/login", json={"email": "usera_camp@test.com", "password": "SuperSecretPassword123"})
+        email_a = f"usera_{uuid.uuid4().hex[:6]}@test.com"
+        await ac.post("/api/v1/auth/register", json={"email": email_a, "password": "SuperSecretPassword123", "full_name": "User A"})
+        resp_a = await ac.post("/api/v1/auth/login", json={"email": email_a, "password": "SuperSecretPassword123"})
         token_a = resp_a.json()["access_token"]
         resp_ws_a = await ac.post("/api/v1/workspaces", json={"name": "Workspace A"}, headers={"Authorization": f"Bearer {token_a}"})
         ws_a_id = resp_ws_a.json()["id"]
 
         # Create User B & Workspace B
-        await ac.post("/api/v1/auth/register", json={"email": "userb_camp@test.com", "password": "SuperSecretPassword123", "full_name": "User B"})
-        resp_b = await ac.post("/api/v1/auth/login", json={"email": "userb_camp@test.com", "password": "SuperSecretPassword123"})
+        email_b = f"userb_{uuid.uuid4().hex[:6]}@test.com"
+        await ac.post("/api/v1/auth/register", json={"email": email_b, "password": "SuperSecretPassword123", "full_name": "User B"})
+        resp_b = await ac.post("/api/v1/auth/login", json={"email": email_b, "password": "SuperSecretPassword123"})
         token_b = resp_b.json()["access_token"]
         resp_ws_b = await ac.post("/api/v1/workspaces", json={"name": "Workspace B"}, headers={"Authorization": f"Bearer {token_b}"})
         ws_b_id = resp_ws_b.json()["id"]

@@ -205,7 +205,11 @@ async def gmail_callback(
         logger.warning("Gmail OAuth state not found in DB or already consumed")
         return RedirectResponse(f"{frontend_url}/settings?error=state_expired")
 
-    if oauth_state.expires_at < datetime.now(timezone.utc):
+    state_exp = oauth_state.expires_at
+    if state_exp.tzinfo is None:
+        state_exp = state_exp.replace(tzinfo=timezone.utc)
+
+    if state_exp < datetime.now(timezone.utc):
         await db.delete(oauth_state)
         await db.commit()
         return RedirectResponse(f"{frontend_url}/settings?error=state_expired")

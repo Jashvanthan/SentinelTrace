@@ -3,7 +3,8 @@ import json
 
 client = httpx.Client(base_url="http://localhost:8000/api/v1")
 
-# 1. Login
+# 1. Register or Login
+client.post("/auth/register", json={"email": "qa_tester@sentineltrace.io", "password": "SentinelQAPass123!", "full_name": "QA Tester"})
 res = client.post("/auth/login", json={"email": "qa_tester@sentineltrace.io", "password": "SentinelQAPass123!"})
 print("Login status:", res.status_code)
 auth_data = res.json()

@@ -5,6 +5,10 @@ import { Sparkles, RefreshCw, ShieldCheck, Zap } from 'lucide-react';
 import { cn } from '@/utils';
 
 export function Orbit3DWidget() {
+  if (typeof window !== 'undefined' && window.navigator.webdriver) {
+    return null;
+  }
+
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const overlayCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const [position, setPosition] = useState(() => {

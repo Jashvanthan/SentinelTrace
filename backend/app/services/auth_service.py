@@ -158,15 +158,30 @@ async def authenticate_user(
         select(User).where(User.email == payload.email.lower(), User.is_active.is_(True))
     )
 
-    # Constant-time comparison to prevent timing attacks
-    if user is None or not verify_password(payload.password, user.password_hash or DUMMY_ARGON2_HASH):
+    # Check if user exists first — give a clear message if not found
+    if user is None:
+        # Still run a dummy hash to prevent timing-based user enumeration
+        verify_password(payload.password, DUMMY_ARGON2_HASH)
         await write_audit_log(
             db, action="LOGIN_FAILED", user_id=None,
             request=request,
-            details={"email": payload.email},
+            details={"email": payload.email, "reason": "user_not_found"},
             outcome="FAILURE",
         )
-        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid credentials")
+        raise HTTPException(
+            status.HTTP_401_UNAUTHORIZED,
+            "No account found with this email address",
+        )
+
+    # User exists — now verify password
+    if not verify_password(payload.password, user.password_hash or DUMMY_ARGON2_HASH):
+        await write_audit_log(
+            db, action="LOGIN_FAILED", user_id=user.id,
+            request=request,
+            details={"email": payload.email, "reason": "wrong_password"},
+            outcome="FAILURE",
+        )
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Incorrect password")
 
     if user.auth_provider != AuthProvider.LOCAL:
         raise HTTPException(
@@ -190,6 +205,7 @@ async def authenticate_user(
     return TokenResponse(
         access_token=access_token,
         expires_in=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+        session_expires_in=getattr(settings, "SESSION_EXPIRE_HOURS", 24) * 3600,
         user=UserResponse.model_validate(user),
     )
 
@@ -256,6 +272,7 @@ async def change_user_password(
     return TokenResponse(
         access_token=access_token,
         expires_in=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+        session_expires_in=getattr(settings, "SESSION_EXPIRE_HOURS", 24) * 3600,
         user=UserResponse.model_validate(user),
     )
 
@@ -271,8 +288,9 @@ async def rotate_refresh_token(
     """
     Rotate a refresh token:
     1. Find and verify the stored token
-    2. If revoked → revoke entire family (token theft detected)
-    3. If valid → revoke old token, issue new access + refresh tokens
+    2. Check absolute 24-hour session lifetime (capped from initial login)
+    3. If revoked → revoke entire family (token theft detected)
+    4. If valid → revoke old token, issue new access + refresh tokens
     """
     token_hash = _hash_token(raw_refresh_token)
     stored: RefreshSession | None = await db.scalar(
@@ -280,30 +298,65 @@ async def rotate_refresh_token(
     )
 
     if stored is None or stored.is_expired:
-        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid refresh token")
+        clear_refresh_token_cookie(response)
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid or expired session. Please log in again.")
 
     if stored.revoked:
         # Token reuse detected → revoke entire family
         logger.warning("refresh_token_reuse_detected", family_id=str(stored.family_id))
         await _revoke_token_family(db, stored.family_id)
+        clear_refresh_token_cookie(response)
         await db.commit()
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Token reuse detected. Please log in again.")
 
+    # ── Enforce 24-Hour Absolute Session Expiration ─────────────────────────
+    session_expire_hours = getattr(settings, "SESSION_EXPIRE_HOURS", 24)
+    earliest_session = await db.scalar(
+        select(RefreshSession)
+        .where(RefreshSession.family_id == stored.family_id)
+        .order_by(RefreshSession.created_at.asc())
+        .limit(1)
+    )
+    family_created_at = earliest_session.created_at if earliest_session else stored.created_at
+    if family_created_at.tzinfo is None:
+        family_created_at = family_created_at.replace(tzinfo=UTC)
+
+    absolute_expires_at = family_created_at + timedelta(hours=session_expire_hours)
+    now_utc = datetime.now(UTC)
+
+    if now_utc >= absolute_expires_at:
+        logger.info("session_absolute_timeout_exceeded", family_id=str(stored.family_id), user_id=str(stored.user_id))
+        stored.revoked = True
+        stored.revoked_at = now_utc
+        await _revoke_token_family(db, stored.family_id)
+        clear_refresh_token_cookie(response)
+        await db.commit()
+        raise HTTPException(
+            status.HTTP_401_UNAUTHORIZED,
+            "Session expired after 24 hours. Please log in again.",
+        )
+
     # Revoke the used token
     stored.revoked = True
-    stored.revoked_at = datetime.now(UTC)
+    stored.revoked_at = now_utc
 
     user = await db.get(User, stored.user_id)
     if user is None or not user.is_active:
+        clear_refresh_token_cookie(response)
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "User not found or deactivated")
 
     access_token = create_access_token(str(user.id), user.email, user.role.value)
-    raw_new, _ = await _issue_refresh_token(db, user, request, family_id=stored.family_id)
+    raw_new, _ = await _issue_refresh_token(
+        db, user, request, family_id=stored.family_id, expires_at=absolute_expires_at
+    )
 
     set_refresh_token_cookie(response, raw_new)
+    remaining_seconds = max(0, int((absolute_expires_at - now_utc).total_seconds()))
+
     return TokenResponse(
         access_token=access_token,
         expires_in=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+        session_expires_in=remaining_seconds,
         user=UserResponse.model_validate(user),
     )
 
@@ -375,7 +428,11 @@ async def validate_and_consume_oauth_state(db: AsyncSession, state_nonce: str, b
     await db.delete(state_record)
     await db.flush()
 
-    if state_record.expires_at < datetime.now(UTC):
+    state_exp = state_record.expires_at
+    if state_exp.tzinfo is None:
+        state_exp = state_exp.replace(tzinfo=UTC)
+
+    if state_exp < datetime.now(UTC):
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "OAuth state expired")
         
     if secrets.compare_digest(state_record.browser_nonce, browser_nonce) is False:
@@ -460,6 +517,7 @@ async def login_google_user(
         return TokenResponse(
             access_token=access_token,
             expires_in=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+            session_expires_in=getattr(settings, "SESSION_EXPIRE_HOURS", 24) * 3600,
             user=UserResponse.model_validate(user),
         )
 
@@ -505,6 +563,7 @@ async def login_google_user(
         return TokenResponse(
             access_token=access_token,
             expires_in=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+            session_expires_in=getattr(settings, "SESSION_EXPIRE_HOURS", 24) * 3600,
             user=UserResponse.model_validate(existing_user),
         )
 
@@ -646,7 +705,11 @@ async def validate_google_pending_token(
         )
         raise HTTPException(status.HTTP_409_CONFLICT, "This Google registration link has already been used")
 
-    if pending_nonce.expires_at < datetime.now(UTC):
+    nonce_exp = pending_nonce.expires_at
+    if nonce_exp.tzinfo is None:
+        nonce_exp = nonce_exp.replace(tzinfo=UTC)
+
+    if nonce_exp < datetime.now(UTC):
         await write_audit_log(
             db, action="GOOGLE_PENDING_TOKEN_EXPIRED",
             user_id=None, request=request,
@@ -805,6 +868,7 @@ async def register_google_user(
         return TokenResponse(
             access_token=access_token,
             expires_in=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+            session_expires_in=getattr(settings, "SESSION_EXPIRE_HOURS", 24) * 3600,
             user=UserResponse.model_validate(user),
         )
 
@@ -833,13 +897,16 @@ async def _issue_refresh_token(
     user: User,
     request: Request,
     family_id: uuid.UUID | None = None,
+    expires_at: datetime | None = None,
 ) -> tuple[str, str]:
     raw_token, token_hash = generate_refresh_token()
+    session_expire_hours = getattr(settings, "SESSION_EXPIRE_HOURS", 24)
+    target_expires = expires_at or (datetime.now(UTC) + timedelta(hours=session_expire_hours))
     refresh_session = RefreshSession(
         user_id=user.id,
         token_hash=token_hash,
         family_id=family_id or uuid.uuid4(),
-        expires_at=datetime.now(UTC) + timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS),
+        expires_at=target_expires,
         user_agent=request.headers.get("User-Agent"),
         ip_address=request.client.host if request.client else None,
     )

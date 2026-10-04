@@ -66,7 +66,8 @@ export interface EmailSendResult {
  * Triggered ONLY after user creation, workspace creation, and session authentication commit.
  */
 export async function sendWelcomeEmail(args: SendWelcomeEmailArgs): Promise<EmailSendResult> {
-  const { serviceId, publicKey, welcomeTemplateId } = getEmailJSConfig();
+  const env = (import.meta as any).env || {};
+  const apiBase = env.VITE_API_BASE_URL || 'http://localhost:8000/api/v1';
 
   // Validate recipient email
   if (!args.email || !args.email.includes('@')) {
@@ -87,27 +88,114 @@ export async function sendWelcomeEmail(args: SendWelcomeEmailArgs): Promise<Emai
     };
   }
 
-  // If EmailJS credentials are not yet configured in env, log safely and return without error
+  const recipientName = args.name?.trim() || args.email.split('@')[0];
+  const appUrl = args.applicationUrl || (typeof window !== 'undefined' ? window.location.origin : 'https://sentineltrace.io');
+  const wsName = args.workspaceName || 'Personal Workspace';
+
+  const plainTextMessage = `Welcome to SentinelTrace, ${recipientName}!
+
+Your security operations account has been successfully provisioned. You now have full access to our multi-agent email threat investigation and security operations platform.
+
+• Workspace: ${wsName}
+• Access SOC Workbench: ${appUrl}/dashboard
+• Login: ${appUrl}/login
+
+Capabilities now active for your account:
+• Automated EML Phishing & BEC Analysis
+• SPF / DKIM / DMARC Cryptographic Header Verification
+• Multi-hop IP Geolocation & ASN Infrastructure Tracking
+• Correlated Threat Campaign Graphs
+• Court-Ready Forensic PDF Dossier Generation
+
+Access your SOC workbench anytime at: ${appUrl}/login
+
+Stay vigilant,
+SentinelTrace Threat Intelligence & SOC Desk`;
+
+  // 1. Primary: Direct Backend Gmail SMTP with Enterprise Dark HTML Template
+  let backendSent = false;
+  try {
+    const backendRes = await fetch(`${apiBase}/auth/welcome-email`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        email: args.email,
+        name: recipientName,
+        workspace_name: wsName,
+        application_url: appUrl,
+      }),
+    });
+
+    if (backendRes.ok) {
+      backendSent = true;
+      sentEventKeys.add(idempotencyKey);
+      console.info('[EmailService] Backend welcome email queued successfully.');
+    }
+  } catch (backendErr) {
+    console.warn('[EmailService] Backend welcome-email endpoint unreachable, proceeding to EmailJS:', backendErr);
+  }
+
+  // 2. EmailJS Dispatch (with full parameter aliases for all template configurations)
+  const { serviceId, publicKey, welcomeTemplateId } = getEmailJSConfig();
+
   if (!serviceId || !publicKey || !welcomeTemplateId) {
-    console.info('[EmailJS] Configuration absent or incomplete; skipping welcome email dispatch.');
+    if (backendSent) {
+      return {
+        success: true,
+        status: 'SENT',
+        message: 'Welcome email sent via SentinelTrace SMTP service.',
+      };
+    }
+    console.info('[EmailJS] Configuration absent or incomplete; skipping EmailJS dispatch.');
     return {
       success: false,
       status: 'SKIPPED_NOT_CONFIGURED',
-      message: 'EmailJS credentials not configured.',
+      message: 'Email service credentials not configured.',
     };
   }
 
   ensureInitialized(publicKey);
 
-  const recipientName = args.name?.trim() || args.email.split('@')[0];
-  const appUrl = args.applicationUrl || (typeof window !== 'undefined' ? window.location.origin : 'https://sentineltrace.io');
-  const wsName = args.workspaceName || 'Personal Workspace';
-
+  // Comprehensive template parameters guaranteeing recipient address and message content are always present
   const templateParams = {
-    name: recipientName,
+    // Recipient address fields (resolves "not address found" for any template mapping)
+    to_email: args.email,
+    to_name: recipientName,
     email: args.email,
+    name: recipientName,
+    user_email: args.email,
+    user_name: recipientName,
+    recipient: args.email,
+    recipient_email: args.email,
+    to: args.email,
+    reply_to: 'jashvan467@gmail.com',
+
+    // Subject & Title fields
+    subject: 'Welcome to SentinelTrace — Advanced Threat Investigation & SOC Platform',
+    title: 'Welcome to SentinelTrace',
+
+    // Message & Content fields (resolves "message template is missing")
+    message: plainTextMessage,
+    welcome_message: plainTextMessage,
+    content: plainTextMessage,
+    body: plainTextMessage,
+    details: plainTextMessage,
+    html_message: `<div style="font-family:sans-serif;color:#1e293b;line-height:1.6;">
+      <h2 style="color:#2563eb;">Welcome to SentinelTrace, ${recipientName}!</h2>
+      <p>Your security operations account has been successfully provisioned on <strong>${wsName}</strong>.</p>
+      <p>You can now investigate suspicious emails, analyze forensic headers (SPF, DKIM, DMARC), track multi-hop IP geolocations, and correlate threat campaign graphs.</p>
+      <p><a href="${appUrl}/dashboard" style="display:inline-block;background:#2563eb;color:#ffffff;padding:10px 20px;border-radius:6px;text-decoration:none;font-weight:bold;">Launch SOC Dashboard</a></p>
+      <p style="color:#64748b;font-size:12px;">SentinelTrace Threat Intelligence Desk</p>
+    </div>`,
+
+    // Metadata & Links
     workspace_name: wsName,
     application_url: appUrl,
+    dashboard_url: `${appUrl}/dashboard`,
+    login_url: `${appUrl}/login`,
+    timestamp: new Date().toLocaleString(),
   };
 
   try {
@@ -120,6 +208,13 @@ export async function sendWelcomeEmail(args: SendWelcomeEmailArgs): Promise<Emai
       message: 'Welcome email sent successfully.',
     };
   } catch (err: any) {
+    if (backendSent) {
+      return {
+        success: true,
+        status: 'SENT',
+        message: 'Welcome email sent via SentinelTrace SMTP service.',
+      };
+    }
     console.error('[EmailJS] Failed to send welcome email:', err?.text || err?.message || err);
     return {
       success: false,

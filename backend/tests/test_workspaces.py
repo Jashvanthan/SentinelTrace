@@ -2,25 +2,29 @@ import asyncio
 from httpx import AsyncClient, ASGITransport
 from app.main import app
 
+import uuid
+
 async def get_users():
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        email_a = f"usera_{uuid.uuid4().hex[:6]}@test.com"
         await ac.post("/api/v1/auth/register", json={
-            "email": "usera@test.com", "password": "SuperSecretPassword123", "full_name": "User A"
+            "email": email_a, "password": "SuperSecretPassword123", "full_name": "User A"
         })
         resp_a = await ac.post("/api/v1/auth/login", json={
-            "email": "usera@test.com", "password": "SuperSecretPassword123"
+            "email": email_a, "password": "SuperSecretPassword123"
         })
         token_a = resp_a.json()["access_token"]
 
+        email_b = f"userb_{uuid.uuid4().hex[:6]}@test.com"
         await ac.post("/api/v1/auth/register", json={
-            "email": "userb@test.com", "password": "SuperSecretPassword123", "full_name": "User B"
+            "email": email_b, "password": "SuperSecretPassword123", "full_name": "User B"
         })
         resp_b = await ac.post("/api/v1/auth/login", json={
-            "email": "userb@test.com", "password": "SuperSecretPassword123"
+            "email": email_b, "password": "SuperSecretPassword123"
         })
         token_b = resp_b.json()["access_token"]
 
-        return {"user_a": token_a, "user_b": token_b}
+        return {"user_a": token_a, "user_b": token_b, "email_a": email_a, "email_b": email_b}
 
 async def test_workspace_creation(users):
     token = users["user_a"]
@@ -69,14 +73,14 @@ async def test_rbac_member_management(users):
 
         add_resp = await ac.post(
             f"/api/v1/workspaces/{ws_id}/members",
-            json={"email": "userb@test.com", "role": "viewer"},
+            json={"email": users["email_b"], "role": "viewer"},
             headers={"Authorization": f"Bearer {token_a}"}
         )
         assert add_resp.status_code == 200
 
         add_fail_resp = await ac.post(
             f"/api/v1/workspaces/{ws_id}/members",
-            json={"email": "usera@test.com", "role": "viewer"},
+            json={"email": users["email_a"], "role": "viewer"},
             headers={"Authorization": f"Bearer {token_b}"}
         )
         assert add_fail_resp.status_code == 403
@@ -121,7 +125,7 @@ async def test_critical_idor_workspace_switching(users):
 
         await ac.post(
             f"/api/v1/workspaces/{ws_a_id}/members",
-            json={"email": "userb@test.com", "role": "viewer"},
+            json={"email": users["email_b"], "role": "viewer"},
             headers={"Authorization": f"Bearer {token_a}"}
         )
         
@@ -130,7 +134,7 @@ async def test_critical_idor_workspace_switching(users):
             headers={"Authorization": f"Bearer {token_b}"}
         )
         assert get_ws_a_by_b_after.status_code == 200
-        user_b_member_id = [m["user_id"] for m in get_ws_a_by_b_after.json() if m["email"] == "userb@test.com"][0]
+        user_b_member_id = [m["user_id"] for m in get_ws_a_by_b_after.json() if m["email"] == users["email_b"]][0]
 
         remove_resp = await ac.delete(
             f"/api/v1/workspaces/{ws_a_id}/members/{user_b_member_id}",

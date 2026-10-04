@@ -21,7 +21,7 @@ test.describe('Activity & Audit Log Page Tests', () => {
     await expect(page.getByText(/Distinct Operators/i)).toBeVisible();
 
     // Verify Refresh and Export buttons exist
-    const refreshBtn = page.getByRole('button', { name: /Refresh/i });
+    const refreshBtn = page.locator('main').getByRole('button', { name: /Refresh/i });
     await expect(refreshBtn).toBeVisible();
     await refreshBtn.click();
 

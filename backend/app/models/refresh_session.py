@@ -49,7 +49,10 @@ class RefreshSession(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     @property
     def is_expired(self) -> bool:
         from datetime import UTC
-        return datetime.now(UTC) > self.expires_at
+        exp = self.expires_at
+        if exp.tzinfo is None:
+            exp = exp.replace(tzinfo=UTC)
+        return datetime.now(UTC) > exp
 
     @property
     def is_valid(self) -> bool:

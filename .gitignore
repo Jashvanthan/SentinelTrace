@@ -126,6 +126,8 @@ docker/data/
 # =====================
 *.sqlite
 *.db
+*.db-shm
+*.db-wal
 *.sqlite3
 
 # =====================

@@ -26,6 +26,15 @@ settings = get_settings()
 
 
 
+def ensure_utc(dt: datetime | None) -> datetime | None:
+    """Ensure datetime is offset-aware in UTC (fixes SQLite naive datetime comparisons)."""
+    if dt is None:
+        return None
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=UTC)
+    return dt.astimezone(UTC)
+
+
 # ── JWT Tokens ────────────────────────────────────────────────────────────────
 
 def create_access_token(
@@ -152,8 +161,10 @@ def set_refresh_token_cookie(response: Response, token: str) -> None:
     """
     Set the refresh token as an HttpOnly, Secure, SameSite=Strict cookie.
     Scoped to the auth path to minimize attack surface.
+    Expires in 24 hours.
     """
-    max_age = settings.REFRESH_TOKEN_EXPIRE_DAYS * 24 * 60 * 60
+    session_expire_hours = getattr(settings, "SESSION_EXPIRE_HOURS", 24)
+    max_age = session_expire_hours * 60 * 60
     response.set_cookie(
         key=REFRESH_TOKEN_COOKIE_NAME,
         value=token,
