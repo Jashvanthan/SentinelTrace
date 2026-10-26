@@ -26,7 +26,11 @@ class Settings(BaseSettings):
     APP_ENV: Literal["development", "staging", "production"] = "development"
     APP_DEBUG: bool = False
     APP_SECRET_KEY: str = Field("sentineltrace-default-super-secure-secret-key-32chars", min_length=32)
-    ALLOWED_ORIGINS: str | list[str] = ["http://localhost:5173", "http://127.0.0.1:5173"]
+    ALLOWED_ORIGINS: str | list[str] = [
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "https://sentinel-trace-two.vercel.app",
+    ]
     FRONTEND_URL: str = "http://localhost:5173"
 
     @field_validator("ALLOWED_ORIGINS", mode="before")
@@ -48,9 +52,23 @@ class Settings(BaseSettings):
             return "sqlite+aiosqlite:///./sentineltrace.db"
         v_str = str(v).strip().strip("'\"")
         if v_str.startswith("postgres://"):
-            return v_str.replace("postgres://", "postgresql+asyncpg://", 1)
-        if v_str.startswith("postgresql://") and not v_str.startswith("postgresql+asyncpg://"):
-            return v_str.replace("postgresql://", "postgresql+asyncpg://", 1)
+            v_str = v_str.replace("postgres://", "postgresql+asyncpg://", 1)
+        elif v_str.startswith("postgresql://") and not v_str.startswith("postgresql+asyncpg://"):
+            v_str = v_str.replace("postgresql://", "postgresql+asyncpg://", 1)
+
+        # asyncpg does NOT support `sslmode` query parameter and fails with unexpected keyword argument.
+        # Strip sslmode and ssl from URL query params; SSLContext is handled via connect_args in session.py.
+        if "postgresql+asyncpg://" in v_str and ("sslmode=" in v_str or "ssl=" in v_str):
+            try:
+                from sqlalchemy.engine.url import make_url
+                parsed = make_url(v_str)
+                query = dict(parsed.query)
+                query.pop("sslmode", None)
+                query.pop("ssl", None)
+                v_str = parsed.set(query=query).render_as_string(hide_password=False)
+            except Exception:
+                for param in ["?sslmode=require", "&sslmode=require", "?ssl=require", "&ssl=require"]:
+                    v_str = v_str.replace(param, "")
         return v_str
 
     # ── Neo4j ────────────────────────────────────────────────────────────────

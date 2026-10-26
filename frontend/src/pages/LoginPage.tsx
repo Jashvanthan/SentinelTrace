@@ -178,9 +178,12 @@ export function LoginPage() {
           err?.code === 'ECONNABORTED';
 
         if (isNetworkErr) {
-          const netMsg = 'Network issue. Please check your internet connection.';
+          const isOffline = typeof navigator !== 'undefined' && !navigator.onLine;
+          const netMsg = isOffline
+            ? 'Network issue. Please check your internet connection.'
+            : 'Unable to reach the server. The backend service may be waking up, please try again in a moment.';
           setFormError(netMsg);
-          notify({ type: 'error', title: 'Network Issue', description: netMsg });
+          notify({ type: 'error', title: isOffline ? 'Network Issue' : 'Connection Error', description: netMsg });
           return;
         }
 
@@ -273,13 +276,16 @@ export function LoginPage() {
         err?.message?.includes('Failed to fetch') ||
         err?.code === 'ECONNABORTED';
 
+      const isOffline = typeof navigator !== 'undefined' && !navigator.onLine;
       const msg = isNetworkErr
-        ? 'Network issue. Please check your internet connection.'
+        ? (isOffline
+            ? 'Network issue. Please check your internet connection.'
+            : 'Unable to reach the server. The backend service may be waking up, please try again in a moment.')
         : extractErrorMessage(err, 'Failed to start Google sign-in. Please try again or use email login.');
       setFormError(msg);
       notify({
         type: 'error',
-        title: isNetworkErr ? 'Network Issue' : 'Google OAuth Error',
+        title: isNetworkErr ? (isOffline ? 'Network Issue' : 'Connection Error') : 'Google OAuth Error',
         description: msg,
       });
     }

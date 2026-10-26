@@ -20,18 +20,29 @@ engine_kwargs: dict[str, Any] = {
 from sqlalchemy import event
 
 if not settings.DATABASE_URL.startswith("sqlite"):
+    connect_args: dict[str, Any] = {
+        "command_timeout": 30,
+        "server_settings": {
+            "application_name": "sentineltrace_api",
+        },
+    }
+
+    # Automatically enable SSL with self-signed certificate acceptance for remote cloud Postgres (Render, Neon, Supabase, RDS)
+    is_local = any(h in settings.DATABASE_URL for h in ("localhost", "127.0.0.1", "@host.docker.internal"))
+    if not is_local or settings.is_production:
+        import ssl
+        ctx = ssl.create_default_context()
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+        connect_args["ssl"] = ctx
+
     engine_kwargs.update({
         "pool_size": settings.DATABASE_POOL_SIZE,
         "max_overflow": settings.DATABASE_MAX_OVERFLOW,
         "pool_timeout": 30,
         "pool_recycle": 1800,  # Auto-recycle stale connections every 30 minutes
         "pool_pre_ping": True, # Proactively test connection validity before checkout
-        "connect_args": {
-            "command_timeout": 30,
-            "server_settings": {
-                "application_name": "sentineltrace_api",
-            },
-        },
+        "connect_args": connect_args,
     })
 else:
     engine_kwargs["connect_args"] = {

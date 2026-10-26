@@ -36,9 +36,9 @@ celery_app.conf.broker_connection_retry_on_startup = False
 celery_app.conf.broker_connection_max_retries = 1
 celery_app.conf.task_publish_retry = False
 
-# Create a synchronous wrapper context for async DB tasks
-engine = create_async_engine(settings.DATABASE_URL, future=True)
-async_session_maker = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+# Use the centralized async DB engine and session factory with configured connection pool and SSL
+from app.db.session import engine, AsyncSessionLocal
+async_session_maker = AsyncSessionLocal
 
 
 def run_async(coro):

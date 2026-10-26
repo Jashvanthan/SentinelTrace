@@ -183,6 +183,23 @@ def create_app() -> FastAPI:
             allowed_hosts=["*"],
         )
 
+    # ── Exception Handlers ─────────────────────────────────────────────────────
+    @app.exception_handler(Exception)
+    async def global_exception_handler(request, exc: Exception):
+        logger.error("unhandled_server_exception", error=str(exc), path=request.url.path)
+        origin = request.headers.get("origin")
+        headers = {}
+        if origin:
+            headers["Access-Control-Allow-Origin"] = origin
+            headers["Access-Control-Allow-Credentials"] = "true"
+            headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, PATCH, DELETE, OPTIONS"
+            headers["Access-Control-Allow-Headers"] = "*"
+        return JSONResponse(
+            status_code=500,
+            content={"detail": "An internal server error occurred. Please verify database connection."},
+            headers=headers,
+        )
+
     # ── Routers ────────────────────────────────────────────────────────────────
     API_PREFIX = "/api/v1"
 
@@ -230,8 +247,9 @@ def create_app() -> FastAPI:
             async with engine.begin() as conn:
                 await conn.execute(text("SELECT 1"))
             deps["postgres"] = "healthy"
-        except Exception:
+        except Exception as e:
             deps["postgres"] = "unhealthy"
+            deps["postgres_error"] = str(e)
             
         # Neo4j
         try:
