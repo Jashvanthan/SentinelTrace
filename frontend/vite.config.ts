@@ -2,6 +2,9 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import path from 'path'
+import { fileURLToPath } from 'node:url'
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
 // https://vite.dev/config/
 export default defineConfig({
@@ -12,7 +15,7 @@ export default defineConfig({
   resolve: {
     dedupe: ['react', 'react-dom'],
     alias: {
-      '@': path.resolve(import.meta.dirname, './src'),
+      '@': path.resolve(__dirname, './src'),
     },
   },
   server: {
@@ -24,24 +27,5 @@ export default defineConfig({
       },
     },
   },
-  build: {
-    rollupOptions: {
-      output: {
-        manualChunks(id: string) {
-          if (id.includes('node_modules')) {
-            if (id.includes('react/') || id.includes('react-dom/') || id.includes('react-router-dom/')) {
-              return 'vendor-react';
-            }
-            if (id.includes('@tanstack') || id.includes('axios') || id.includes('zustand')) {
-              return 'vendor-state';
-            }
-            if (id.includes('lucide-react')) {
-              return 'vendor-icons';
-            }
-          }
-        },
-      },
-    },
-    chunkSizeWarningLimit: 1000,
-  },
 })
+
