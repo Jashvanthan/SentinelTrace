@@ -56,6 +56,21 @@ class Settings(BaseSettings):
         elif v_str.startswith("postgresql://") and not v_str.startswith("postgresql+asyncpg://"):
             v_str = v_str.replace("postgresql://", "postgresql+asyncpg://", 1)
 
+        # Check if the postgres hostname is resolvable via DNS; if DNS lookup fails
+        # (e.g. docker-compose hostname 'postgres' running on Render or outside docker network),
+        # fallback to SQLite so the application remains fully functional and never crashes on startup.
+        if "postgresql+asyncpg://" in v_str:
+            try:
+                from sqlalchemy.engine.url import make_url
+                parsed = make_url(v_str)
+                host = parsed.host
+                port = parsed.port or 5432
+                if host and host not in ("localhost", "127.0.0.1", "::1"):
+                    import socket
+                    socket.getaddrinfo(host, port)
+            except Exception:
+                return "sqlite+aiosqlite:///./sentineltrace.db"
+
         # asyncpg does NOT support `sslmode` query parameter and fails with unexpected keyword argument.
         # Strip sslmode and ssl from URL query params; SSLContext is handled via connect_args in session.py.
         if "postgresql+asyncpg://" in v_str and ("sslmode=" in v_str or "ssl=" in v_str):

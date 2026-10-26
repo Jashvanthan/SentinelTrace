@@ -249,7 +249,8 @@ def create_app() -> FastAPI:
             deps["postgres"] = "healthy"
         except Exception as e:
             deps["postgres"] = "unhealthy"
-            deps["postgres_error"] = str(e)
+            db_host = getattr(engine.url, "host", "unknown") if "engine" in locals() else "unknown"
+            deps["postgres_error"] = f"{str(e)} (host={db_host})"
             
         # Neo4j
         try:
