@@ -12,5 +12,8 @@
     "test": "npm --prefix frontend run test",
     "test:ui": "npm --prefix frontend run test:ui",
     "test:report": "npm --prefix frontend run test:report"
+  },
+  "engines": {
+    "node": "22.x"
   }
 }
