@@ -32,6 +32,7 @@ from app.services.password_service import (
     hash_password,
     needs_rehash,
     verify_password,
+    verify_password_async,
 )
 from app.core.security import (
     clear_refresh_token_cookie,
@@ -48,6 +49,8 @@ from app.models.google_pending import GooglePendingNonce
 from app.models.workspace import Workspace, WorkspaceMember
 from app.schemas.auth import (
     ChangePasswordRequest,
+    DeviceSessionListResponse,
+    DeviceSessionResponse,
     LoginRequest,
     TokenResponse,
     UserRegisterRequest,
@@ -161,7 +164,7 @@ async def authenticate_user(
     # Check if user exists first — give a clear message if not found
     if user is None:
         # Still run a dummy hash to prevent timing-based user enumeration
-        verify_password(payload.password, DUMMY_ARGON2_HASH)
+        await verify_password_async(payload.password, DUMMY_ARGON2_HASH)
         await write_audit_log(
             db, action="LOGIN_FAILED", user_id=None,
             request=request,
@@ -170,18 +173,18 @@ async def authenticate_user(
         )
         raise HTTPException(
             status.HTTP_401_UNAUTHORIZED,
-            "No account found with this email address",
+            "Incorrect username or password",
         )
 
-    # User exists — now verify password
-    if not verify_password(payload.password, user.password_hash or DUMMY_ARGON2_HASH):
+    # User exists — now verify password (non-blocking async for high concurrency throughput)
+    if not await verify_password_async(payload.password, user.password_hash or DUMMY_ARGON2_HASH):
         await write_audit_log(
             db, action="LOGIN_FAILED", user_id=user.id,
             request=request,
             details={"email": payload.email, "reason": "wrong_password"},
             outcome="FAILURE",
         )
-        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Incorrect password")
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Incorrect username or password")
 
     if user.auth_provider != AuthProvider.LOCAL:
         raise HTTPException(
@@ -929,3 +932,219 @@ async def _revoke_token_family(db: AsyncSession, family_id: uuid.UUID) -> None:
 def _hash_token(raw: str) -> str:
     import hashlib
     return hashlib.sha256(raw.encode()).hexdigest()
+
+
+# ── Multi-Device Session Management ──────────────────────────────────────────
+
+def parse_user_agent(ua_string: str | None) -> dict[str, str]:
+    """Parse User-Agent string to extract friendly device, browser, and OS info."""
+    if not ua_string:
+        return {
+            "device_type": "unknown",
+            "device_name": "Web Browser",
+            "browser": "Browser",
+            "os": "Unknown",
+        }
+
+    ua = ua_string.lower()
+
+    # Detect OS
+    os_name = "Unknown"
+    if "iphone" in ua or "ipod" in ua:
+        os_name = "iOS"
+    elif "ipad" in ua:
+        os_name = "iPadOS"
+    elif "android" in ua:
+        os_name = "Android"
+    elif "windows" in ua:
+        os_name = "Windows"
+    elif "macintosh" in ua or "mac os x" in ua:
+        os_name = "macOS"
+    elif "linux" in ua:
+        os_name = "Linux"
+    elif "cros" in ua:
+        os_name = "Chrome OS"
+
+    # Detect Device Type
+    if "ipad" in ua or "tablet" in ua:
+        device_type = "tablet"
+    elif "mobile" in ua or "iphone" in ua or "ipod" in ua or "android" in ua:
+        device_type = "mobile"
+    else:
+        device_type = "desktop"
+
+    # Detect Browser
+    browser = "Web Browser"
+    if "edg" in ua:
+        browser = "Microsoft Edge"
+    elif "chrome" in ua and "safari" in ua:
+        browser = "Google Chrome"
+    elif "safari" in ua and "chrome" not in ua:
+        browser = "Apple Safari"
+    elif "firefox" in ua:
+        browser = "Mozilla Firefox"
+    elif "opera" in ua or "opr" in ua:
+        browser = "Opera"
+
+    # Friendly device display name
+    if "iphone" in ua:
+        device_name = f"Apple iPhone ({browser})"
+    elif "ipad" in ua:
+        device_name = f"Apple iPad ({browser})"
+    elif "android" in ua:
+        device_name = f"Android Device ({browser})"
+    elif os_name == "Windows":
+        device_name = f"Windows PC ({browser})"
+    elif os_name == "macOS":
+        device_name = f"Mac ({browser})"
+    elif os_name == "Linux":
+        device_name = f"Linux ({browser})"
+    else:
+        device_name = f"{os_name} ({browser})"
+
+    return {
+        "device_type": device_type,
+        "device_name": device_name,
+        "browser": browser,
+        "os": os_name,
+    }
+
+
+async def list_user_sessions(
+    db: AsyncSession,
+    user_id: uuid.UUID,
+    raw_current_token: str | None = None,
+) -> DeviceSessionListResponse:
+    """
+    List all concurrent active device sessions for this user.
+    Groups rotation chains by family_id to represent each distinct device session.
+    """
+    current_family_id: uuid.UUID | None = None
+    if raw_current_token:
+        curr_hash = _hash_token(raw_current_token)
+        curr_session = await db.scalar(
+            select(RefreshSession).where(RefreshSession.token_hash == curr_hash)
+        )
+        if curr_session:
+            current_family_id = curr_session.family_id
+
+    now_utc = datetime.now(UTC)
+    stmt = (
+        select(RefreshSession)
+        .where(
+            RefreshSession.user_id == user_id,
+            RefreshSession.revoked.is_(False),
+            RefreshSession.expires_at > now_utc,
+        )
+        .order_by(RefreshSession.created_at.desc())
+    )
+    result = await db.execute(stmt)
+    sessions = result.scalars().all()
+
+    # Deduplicate by family_id (each family represents one physical/browser device session)
+    families: dict[uuid.UUID, RefreshSession] = {}
+    for sess in sessions:
+        if sess.family_id not in families:
+            families[sess.family_id] = sess
+
+    device_items: list[DeviceSessionResponse] = []
+    for fid, sess in families.items():
+        parsed = parse_user_agent(sess.user_agent)
+        is_curr = bool(current_family_id and sess.family_id == current_family_id)
+        device_items.append(
+            DeviceSessionResponse(
+                id=str(sess.id),
+                family_id=str(sess.family_id),
+                device_type=parsed["device_type"],
+                device_name=parsed["device_name"],
+                browser=parsed["browser"],
+                os=parsed["os"],
+                ip_address=sess.ip_address,
+                created_at=sess.created_at,
+                last_used_at=sess.last_used_at or sess.created_at,
+                expires_at=sess.expires_at,
+                is_current=is_curr,
+            )
+        )
+
+    # Sort so that current session is always at top
+    device_items.sort(key=lambda s: (not s.is_current, s.created_at), reverse=False)
+
+    return DeviceSessionListResponse(
+        sessions=device_items,
+        total_active=len(device_items),
+    )
+
+
+async def revoke_device_session(
+    db: AsyncSession,
+    user_id: uuid.UUID,
+    family_id: uuid.UUID,
+    raw_current_token: str | None = None,
+    response: Response | None = None,
+) -> bool:
+    """Revoke a specific device session family for this user."""
+    result = await db.execute(
+        select(RefreshSession).where(
+            RefreshSession.user_id == user_id,
+            RefreshSession.family_id == family_id,
+            RefreshSession.revoked.is_(False),
+        )
+    )
+    sessions = result.scalars().all()
+    if not sessions:
+        return False
+
+    now_utc = datetime.now(UTC)
+    for sess in sessions:
+        sess.revoked = True
+        sess.revoked_at = now_utc
+
+    await db.commit()
+
+    if raw_current_token and response:
+        curr_hash = _hash_token(raw_current_token)
+        curr_session = await db.scalar(
+            select(RefreshSession).where(RefreshSession.token_hash == curr_hash)
+        )
+        if curr_session and curr_session.family_id == family_id:
+            clear_refresh_token_cookie(response)
+
+    logger.info("device_session_revoked", user_id=str(user_id), family_id=str(family_id))
+    return True
+
+
+async def revoke_other_sessions(
+    db: AsyncSession,
+    user_id: uuid.UUID,
+    raw_current_token: str | None = None,
+) -> int:
+    """Revoke all active device sessions EXCEPT the current device."""
+    current_family_id: uuid.UUID | None = None
+    if raw_current_token:
+        curr_hash = _hash_token(raw_current_token)
+        curr_session = await db.scalar(
+            select(RefreshSession).where(RefreshSession.token_hash == curr_hash)
+        )
+        if curr_session:
+            current_family_id = curr_session.family_id
+
+    stmt = select(RefreshSession).where(
+        RefreshSession.user_id == user_id,
+        RefreshSession.revoked.is_(False),
+    )
+    if current_family_id:
+        stmt = stmt.where(RefreshSession.family_id != current_family_id)
+
+    result = await db.execute(stmt)
+    revoked_count = 0
+    now_utc = datetime.now(UTC)
+    for sess in result.scalars():
+        sess.revoked = True
+        sess.revoked_at = now_utc
+        revoked_count += 1
+
+    await db.commit()
+    logger.info("other_device_sessions_revoked", user_id=str(user_id), count=revoked_count)
+    return revoked_count
+

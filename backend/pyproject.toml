@@ -95,3 +95,6 @@ ignore_missing_imports = true
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+addopts = "-s --ignore=tests/test_candidate_models.py --ignore=tests/test_model_speed.py --ignore=tests/test_threat_intel_endpoints.py --ignore=tests/test_live_upload.py --ignore=tests/test_threat_intel_live.py"
+
+

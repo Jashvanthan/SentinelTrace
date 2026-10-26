@@ -7,7 +7,7 @@ import enum
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, Enum, Float, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import DateTime, Enum, Float, ForeignKey, Index, Integer, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -48,6 +48,9 @@ class EmailAnalysis(Base, UUIDPrimaryKeyMixin, TimestampMixin):
 
     __table_args__ = (
         UniqueConstraint("workspace_id", "source_provider", "source_message_id", name="uq_workspace_source_msg"),
+        Index("ix_email_analyses_ws_created", "workspace_id", "created_at"),
+        Index("ix_email_analyses_ws_status", "workspace_id", "status"),
+        Index("ix_email_analyses_ws_severity", "workspace_id", "severity"),
     )
 
     # ── Ownership ─────────────────────────────────────────────────────────────
@@ -80,7 +83,7 @@ class EmailAnalysis(Base, UUIDPrimaryKeyMixin, TimestampMixin):
 
     # ── Raw Email Storage ────────────────────────────────────────────────────
     raw_eml_gcs_path: Mapped[str | None] = mapped_column(Text, nullable=True)
-    raw_eml_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    raw_eml_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
     raw_eml_size_bytes: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     # ── Parsed Headers ───────────────────────────────────────────────────────

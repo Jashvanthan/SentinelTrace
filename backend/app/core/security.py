@@ -157,28 +157,34 @@ REFRESH_TOKEN_COOKIE_NAME = "st_refresh_token"
 REFRESH_TOKEN_COOKIE_PATH = "/api/v1/auth"
 
 
-def set_refresh_token_cookie(response: Response, token: str) -> None:
+def set_refresh_token_cookie(response: Response, token: str, is_secure: bool | None = None) -> None:
     """
-    Set the refresh token as an HttpOnly, Secure, SameSite=Strict cookie.
+    Set the refresh token as an HttpOnly, Secure cookie.
     Scoped to the auth path to minimize attack surface.
     Expires in 24 hours.
     """
     session_expire_hours = getattr(settings, "SESSION_EXPIRE_HOURS", 24)
     max_age = session_expire_hours * 60 * 60
+    secure = settings.is_production if is_secure is None else is_secure
     response.set_cookie(
         key=REFRESH_TOKEN_COOKIE_NAME,
         value=token,
         max_age=max_age,
         path=REFRESH_TOKEN_COOKIE_PATH,
-        secure=settings.is_production,   # Secure flag in production (requires HTTPS)
+        secure=secure,
         httponly=True,
-        samesite="none" if settings.is_production else "lax",
+        samesite="none" if secure else "lax",
     )
 
 
-def clear_refresh_token_cookie(response: Response) -> None:
-    """Clear the refresh token cookie on logout."""
+def clear_refresh_token_cookie(response: Response, is_secure: bool | None = None) -> None:
+    """Clear the refresh token cookie on logout, matching all security attributes."""
+    secure = settings.is_production if is_secure is None else is_secure
     response.delete_cookie(
         key=REFRESH_TOKEN_COOKIE_NAME,
         path=REFRESH_TOKEN_COOKIE_PATH,
+        secure=secure,
+        httponly=True,
+        samesite="none" if secure else "lax",
     )
+

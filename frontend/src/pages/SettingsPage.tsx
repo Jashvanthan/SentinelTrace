@@ -5,11 +5,12 @@ import { useMe, useUpdateProfile, useWorkspaceMembers, useAddWorkspaceMember, us
 import { useAuthStore } from '@/store';
 import { useWorkspaceStore } from '@/store/workspace';
 import { useWorkspaces } from '@/api/workspaces';
-import { Shield, User, Users, Mail, AlertTriangle, Loader2, CheckCircle, XCircle, Trash2, Plus, ExternalLink, Upload, CreditCard, Sparkles, Check, AlertCircle, Info, X } from 'lucide-react';
+import { Shield, User, Users, Mail, AlertTriangle, Loader2, CheckCircle, XCircle, Trash2, Plus, ExternalLink, Upload, CreditCard, Sparkles, Check, AlertCircle, Info, X, Smartphone, Monitor, Globe, LogOut } from 'lucide-react';
 import { cn, extractErrorMessage } from '@/utils';
 import { integrationsApi, useGmailConnection, useSyncGmail, useUpdateGmailConfig } from '@/api/integrations';
+import apiClient from '@/lib/api';
 
-type TabId = 'general' | 'members' | 'integrations' | 'billing';
+type TabId = 'general' | 'members' | 'integrations' | 'billing' | 'security';
 
 interface PopNotification {
   type: 'success' | 'error' | 'info';
@@ -61,6 +62,7 @@ export function SettingsPage() {
         <div className="w-full lg:w-64 flex-shrink-0">
           <nav className="flex lg:flex-col gap-2 overflow-x-auto lg:overflow-visible pb-2 lg:pb-0">
             <TabButton id="general" active={activeTab} onClick={setActiveTab} icon={User} label="General" />
+            <TabButton id="security" active={activeTab} onClick={setActiveTab} icon={Shield} label="Security & Devices" />
             <TabButton id="members" active={activeTab} onClick={setActiveTab} icon={Users} label="Members" />
             <TabButton id="integrations" active={activeTab} onClick={setActiveTab} icon={Mail} label="Integrations" />
             <TabButton id="billing" active={activeTab} onClick={setActiveTab} icon={CreditCard} label="Billing & Subscription" />
@@ -70,6 +72,7 @@ export function SettingsPage() {
         {/* Content Area */}
         <div className="flex-1 card-surface border border-[hsl(var(--border))] rounded-lg overflow-y-auto">
           {activeTab === 'general' && <GeneralSettings onShowPop={handleShowPop} />}
+          {activeTab === 'security' && <SecuritySettings onShowPop={handleShowPop} />}
           {activeTab === 'members' && <MembersSettings onShowPop={handleShowPop} />}
           {activeTab === 'integrations' && <IntegrationsSettings onShowPop={handleShowPop} />}
           {activeTab === 'billing' && <BillingSettings />}
@@ -855,3 +858,223 @@ function BillingSettings() {
     </div>
   );
 }
+
+// ── Security & Multi-Device Sessions Settings ────────────────────────────────
+
+interface DeviceSession {
+  id: string;
+  family_id: string;
+  device_type: 'mobile' | 'desktop' | 'tablet' | 'unknown';
+  device_name: string;
+  browser: string;
+  os: string;
+  ip_address: string | null;
+  created_at: string;
+  last_used_at: string | null;
+  expires_at: string;
+  is_current: boolean;
+}
+
+function SecuritySettings({ onShowPop }: { onShowPop: (msg: PopNotification) => void }) {
+  const [sessions, setSessions] = useState<DeviceSession[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [revokingId, setRevokingId] = useState<string | null>(null);
+  const [isRevokingOthers, setIsRevokingOthers] = useState(false);
+
+  const fetchSessions = async () => {
+    try {
+      setIsLoading(true);
+      const res = await apiClient.get<{ sessions: DeviceSession[]; total_active: number }>('/auth/sessions');
+      setSessions(res.data.sessions || []);
+    } catch (err: any) {
+      onShowPop({
+        type: 'error',
+        text: extractErrorMessage(err, 'Failed to load active device sessions'),
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchSessions();
+  }, []);
+
+  const handleRevokeSession = async (familyId: string, isCurrent: boolean) => {
+    try {
+      setRevokingId(familyId);
+      await apiClient.delete(`/auth/sessions/${familyId}`);
+      if (isCurrent) {
+        window.location.href = '/login?reason=session_signed_out';
+        return;
+      }
+      onShowPop({ type: 'success', text: 'Device signed out successfully.' });
+      await fetchSessions();
+    } catch (err: any) {
+      onShowPop({
+        type: 'error',
+        text: extractErrorMessage(err, 'Failed to sign out device session'),
+      });
+    } finally {
+      setRevokingId(null);
+    }
+  };
+
+  const handleRevokeOthers = async () => {
+    try {
+      setIsRevokingOthers(true);
+      const res = await apiClient.post<{ status: string; revoked_count: number; message: string }>('/auth/sessions/revoke-others');
+      onShowPop({
+        type: 'success',
+        text: res.data.message || 'All other devices signed out successfully.',
+      });
+      await fetchSessions();
+    } catch (err: any) {
+      onShowPop({
+        type: 'error',
+        text: extractErrorMessage(err, 'Failed to sign out other devices'),
+      });
+    } finally {
+      setIsRevokingOthers(false);
+    }
+  };
+
+  return (
+    <div className="p-6 space-y-6">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-[hsl(var(--border))]">
+        <div>
+          <h2 className="text-base font-semibold text-[hsl(var(--foreground))] flex items-center gap-2">
+            <Shield className="w-5 h-5 text-[hsl(var(--accent))]" />
+            Active Devices & Concurrent Sessions
+          </h2>
+          <p className="text-xs text-[hsl(var(--foreground-muted))] mt-1">
+            Manage devices where your account is currently signed in. SentinelTrace supports simultaneous multi-device sign-in.
+          </p>
+        </div>
+
+        {sessions.length > 1 && (
+          <button
+            type="button"
+            onClick={handleRevokeOthers}
+            disabled={isRevokingOthers}
+            className={cn(
+              "px-3 py-2 text-xs font-semibold rounded-md border transition-colors flex items-center gap-2 shrink-0",
+              "border-red-500/30 text-red-400 hover:bg-red-500/10 active:scale-95 disabled:opacity-50 cursor-pointer"
+            )}
+          >
+            {isRevokingOthers ? (
+              <>
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                Signing out other devices…
+              </>
+            ) : (
+              <>
+                <LogOut className="w-3.5 h-3.5" />
+                Sign Out All Other Devices
+              </>
+            )}
+          </button>
+        )}
+      </div>
+
+      {isLoading ? (
+        <div className="py-12 flex flex-col items-center justify-center gap-3 text-slate-400 text-sm">
+          <Loader2 className="w-6 h-6 animate-spin text-[hsl(var(--accent))]" />
+          <span>Loading active device sessions…</span>
+        </div>
+      ) : sessions.length === 0 ? (
+        <div className="p-6 text-center text-sm text-[hsl(var(--foreground-muted))] bg-[hsl(var(--surface-2))] rounded-lg border border-[hsl(var(--border))]">
+          No other active device sessions found.
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 gap-3">
+          {sessions.map((sess) => (
+            <div
+              key={sess.id}
+              className={cn(
+                "p-4 rounded-lg border transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-4",
+                sess.is_current
+                  ? "bg-emerald-950/20 border-emerald-500/30"
+                  : "bg-[hsl(var(--surface-2))] border-[hsl(var(--border))] hover:border-[hsl(var(--border-strong))]"
+              )}
+            >
+              <div className="flex items-start sm:items-center gap-3.5 min-w-0">
+                <div className={cn(
+                  "p-2.5 rounded-lg shrink-0",
+                  sess.device_type === 'mobile' ? "bg-blue-500/10 text-blue-400" :
+                  sess.device_type === 'tablet' ? "bg-purple-500/10 text-purple-400" :
+                  "bg-emerald-500/10 text-emerald-400"
+                )}>
+                  {sess.device_type === 'mobile' ? (
+                    <Smartphone className="w-5 h-5" />
+                  ) : (
+                    <Monitor className="w-5 h-5" />
+                  )}
+                </div>
+
+                <div className="space-y-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="font-semibold text-sm text-[hsl(var(--foreground))]">
+                      {sess.device_name}
+                    </span>
+                    {sess.is_current && (
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+                        This Device (Current)
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-3 text-xs text-[hsl(var(--foreground-muted))] flex-wrap">
+                    <span className="flex items-center gap-1">
+                      <Globe className="w-3 h-3" />
+                      IP: {sess.ip_address || 'Local / LAN'}
+                    </span>
+                    <span>•</span>
+                    <span>OS: {sess.os}</span>
+                    <span>•</span>
+                    <span>Browser: {sess.browser}</span>
+                    <span>•</span>
+                    <span>Active since {new Date(sess.created_at).toLocaleDateString()}</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex items-center sm:self-center shrink-0">
+                <button
+                  type="button"
+                  onClick={() => handleRevokeSession(sess.family_id, sess.is_current)}
+                  disabled={revokingId === sess.family_id}
+                  className={cn(
+                    "px-3 py-1.5 text-xs font-medium rounded border transition-colors flex items-center gap-1.5",
+                    sess.is_current
+                      ? "border-slate-700 text-slate-400 hover:text-red-400 hover:border-red-500/40"
+                      : "border-red-500/30 text-red-400 hover:bg-red-500/10",
+                    "disabled:opacity-50 cursor-pointer"
+                  )}
+                >
+                  {revokingId === sess.family_id ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  ) : (
+                    <Trash2 className="w-3.5 h-3.5" />
+                  )}
+                  {sess.is_current ? 'Sign Out This Device' : 'Sign Out Device'}
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Security Best Practices Guidance */}
+      <div className="p-4 rounded-lg bg-[hsl(var(--surface-1))] border border-[hsl(var(--border))] text-xs text-[hsl(var(--foreground-muted))] space-y-2">
+        <p className="font-semibold text-[hsl(var(--foreground))] flex items-center gap-1.5">
+          <Shield className="w-4 h-4 text-[hsl(var(--accent))]" />
+          Enterprise SOC Multi-Device Session Security
+        </p>
+        <p>
+          Each sign-in generates an isolated cryptographic session family. Revoking a session immediately invalidates the refresh chain on that specific hardware, preventing session replay attacks without disturbing other active workstations.
+        </p>
+      </div>
+    </div>
+  );
+}
+

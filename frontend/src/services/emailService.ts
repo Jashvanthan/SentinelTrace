@@ -2,6 +2,7 @@
 // Sends transactional notifications for Account Welcome and Gmail Connection
 
 import emailjs from '@emailjs/browser';
+import { BASE_URL } from '../lib/api';
 
 interface EmailJSConfig {
   serviceId: string;
@@ -66,8 +67,7 @@ export interface EmailSendResult {
  * Triggered ONLY after user creation, workspace creation, and session authentication commit.
  */
 export async function sendWelcomeEmail(args: SendWelcomeEmailArgs): Promise<EmailSendResult> {
-  const env = (import.meta as any).env || {};
-  const apiBase = env.VITE_API_BASE_URL || 'http://localhost:8000/api/v1';
+  const apiBase = BASE_URL;
 
   // Validate recipient email
   if (!args.email || !args.email.includes('@')) {

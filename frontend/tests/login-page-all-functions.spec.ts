@@ -102,7 +102,7 @@ test.describe('LoginPage Complete Functional & Google Sign-In Tests', () => {
     await page.route('**/api/**/auth/login', async (route) => {
       await route.fulfill({
         status: 401,
-        json: { detail: 'Invalid email or password.' },
+        json: { detail: 'Incorrect username or password' },
       });
     });
 
@@ -112,8 +112,23 @@ test.describe('LoginPage Complete Functional & Google Sign-In Tests', () => {
     await page.getByLabel(/Password/i).fill('WrongPassword!');
     await page.locator('form button[type="submit"]').click();
 
-    // Error alert should be visible
-    await expect(page.getByText('Invalid email or password.')).toBeVisible();
+    // Error alert should display "Incorrect username or password"
+    await expect(page.getByText('Incorrect username or password')).toBeVisible();
+  });
+
+  test('5b. Network issue error display on connection failure', async ({ page }) => {
+    await page.route('**/api/**/auth/login', async (route) => {
+      await route.abort('failed');
+    });
+
+    await page.goto('/login');
+
+    await page.getByLabel('Email').fill('analyst@company.com');
+    await page.getByLabel(/Password/i).fill('ValidPassword123!');
+    await page.locator('form button[type="submit"]').click();
+
+    // Error alert should display network issue
+    await expect(page.getByText(/Network issue/i)).toBeVisible();
   });
 
   test('6. Successful Registration Flow', async ({ page }) => {

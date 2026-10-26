@@ -19,9 +19,12 @@ import httpx
 
 from app.core.config import get_settings
 from app.core.logging import get_logger
+from app.core.http_client import get_http_client
+from app.core.cache import get_cache_manager
 
 settings = get_settings()
 logger = get_logger("sentineltrace.intel")
+cache_manager = get_cache_manager()
 
 
 # ── Abstract Interface ────────────────────────────────────────────────────────
@@ -91,17 +94,17 @@ class VirusTotalAdapter(ThreatIntelProvider):
                 "confidence": "UNKNOWN",
             }
         try:
-            async with httpx.AsyncClient(timeout=12.0) as client:
-                resp = await client.get(f"{self.BASE_URL}{path}", headers=self._headers())
-                if resp.status_code == 429:
-                    return {
-                        "provider": "VirusTotal",
-                        "status": "RATE_LIMITED",
-                        "reason": "VirusTotal API rate limit exceeded",
-                        "confidence": "UNKNOWN",
-                    }
-                resp.raise_for_status()
-                return self._normalize(resp.json(), indicator)
+            client = await get_http_client()
+            resp = await client.get(f"{self.BASE_URL}{path}", headers=self._headers())
+            if resp.status_code == 429:
+                return {
+                    "provider": "VirusTotal",
+                    "status": "RATE_LIMITED",
+                    "reason": "VirusTotal API rate limit exceeded",
+                    "confidence": "UNKNOWN",
+                }
+            resp.raise_for_status()
+            return self._normalize(resp.json(), indicator)
         except httpx.HTTPStatusError as e:
             logger.warning("virustotal_http_error", status=e.response.status_code, path=path)
             return {
@@ -171,35 +174,35 @@ class AbuseIPDBAdapter(ThreatIntelProvider):
                 "confidence": "UNKNOWN",
             }
         try:
-            async with httpx.AsyncClient(timeout=12.0) as client:
-                resp = await client.get(
-                    f"{self.BASE_URL}/check",
-                    headers=self._headers(),
-                    params={"ipAddress": ip, "maxAgeInDays": 90, "verbose": True},
-                )
-                if resp.status_code == 429:
-                    return {
-                        "provider": "AbuseIPDB",
-                        "status": "RATE_LIMITED",
-                        "reason": "AbuseIPDB API rate limit exceeded",
-                        "confidence": "UNKNOWN",
-                    }
-                resp.raise_for_status()
-                d = resp.json().get("data", {})
+            client = await get_http_client()
+            resp = await client.get(
+                f"{self.BASE_URL}/check",
+                headers=self._headers(),
+                params={"ipAddress": ip, "maxAgeInDays": 90, "verbose": True},
+            )
+            if resp.status_code == 429:
                 return {
                     "provider": "AbuseIPDB",
-                    "status": "AVAILABLE",
-                    "ip": ip,
-                    "abuse_confidence": d.get("abuseConfidenceScore", 0),
-                    "total_reports": d.get("totalReports", 0),
-                    "country": d.get("countryCode"),
-                    "isp": d.get("isp"),
-                    "domain": d.get("domain"),
-                    "usage_type": d.get("usageType"),
-                    "last_reported": d.get("lastReportedAt"),
-                    "categories": d.get("reports", [])[:5] if isinstance(d.get("reports"), list) else [],
-                    "confidence": "MEDIUM",
+                    "status": "RATE_LIMITED",
+                    "reason": "AbuseIPDB API rate limit exceeded",
+                    "confidence": "UNKNOWN",
                 }
+            resp.raise_for_status()
+            d = resp.json().get("data", {})
+            return {
+                "provider": "AbuseIPDB",
+                "status": "AVAILABLE",
+                "ip": ip,
+                "abuse_confidence": d.get("abuseConfidenceScore", 0),
+                "total_reports": d.get("totalReports", 0),
+                "country": d.get("countryCode"),
+                "isp": d.get("isp"),
+                "domain": d.get("domain"),
+                "usage_type": d.get("usageType"),
+                "last_reported": d.get("lastReportedAt"),
+                "categories": d.get("reports", [])[:5] if isinstance(d.get("reports"), list) else [],
+                "confidence": "MEDIUM",
+            }
         except httpx.HTTPStatusError as e:
             logger.warning("abuseipdb_http_error", status=e.response.status_code, ip=ip)
             return {
@@ -248,34 +251,34 @@ class ShodanAdapter(ThreatIntelProvider):
                 "confidence": "UNKNOWN",
             }
         try:
-            async with httpx.AsyncClient(timeout=12.0) as client:
-                resp = await client.get(
-                    f"{self.BASE_URL}/shodan/host/{ip}",
-                    params={"key": self._get_api_key()},
-                )
-                if resp.status_code == 429:
-                    return {
-                        "provider": "Shodan",
-                        "status": "RATE_LIMITED",
-                        "reason": "Shodan API rate limit exceeded",
-                        "confidence": "UNKNOWN",
-                    }
-                resp.raise_for_status()
-                d = resp.json()
-                vulns = list(d.get("vulns", {}).keys()) if isinstance(d.get("vulns"), dict) else d.get("vulns", [])
+            client = await get_http_client()
+            resp = await client.get(
+                f"{self.BASE_URL}/shodan/host/{ip}",
+                params={"key": self._get_api_key()},
+            )
+            if resp.status_code == 429:
                 return {
                     "provider": "Shodan",
-                    "status": "AVAILABLE",
-                    "ip": ip,
-                    "ports": d.get("ports", []),
-                    "hostnames": d.get("hostnames", []),
-                    "domains": d.get("domains", []),
-                    "vulnerabilities": vulns,
-                    "organization": d.get("org") or d.get("isp"),
-                    "asn": d.get("asn"),
-                    "last_update": d.get("last_update"),
-                    "confidence": "MEDIUM",
+                    "status": "RATE_LIMITED",
+                    "reason": "Shodan API rate limit exceeded",
+                    "confidence": "UNKNOWN",
                 }
+            resp.raise_for_status()
+            d = resp.json()
+            vulns = list(d.get("vulns", {}).keys()) if isinstance(d.get("vulns"), dict) else d.get("vulns", [])
+            return {
+                "provider": "Shodan",
+                "status": "AVAILABLE",
+                "ip": ip,
+                "ports": d.get("ports", []),
+                "hostnames": d.get("hostnames", []),
+                "domains": d.get("domains", []),
+                "vulnerabilities": vulns,
+                "organization": d.get("org") or d.get("isp"),
+                "asn": d.get("asn"),
+                "last_update": d.get("last_update"),
+                "confidence": "MEDIUM",
+            }
         except httpx.HTTPStatusError as e:
             if e.response.status_code == 404:
                 return {
@@ -307,13 +310,13 @@ class ShodanAdapter(ThreatIntelProvider):
         if not self.is_configured():
             return {"provider": "Shodan", "status": "NOT_CONFIGURED", "reason": "Shodan API key not configured"}
         try:
-            async with httpx.AsyncClient(timeout=12.0) as client:
-                resp = await client.get(
-                    f"{self.BASE_URL}/dns/domain/{domain}",
-                    params={"key": self._get_api_key()},
-                )
-                resp.raise_for_status()
-                return {"provider": "Shodan", "status": "AVAILABLE", **resp.json()}
+            client = await get_http_client()
+            resp = await client.get(
+                f"{self.BASE_URL}/dns/domain/{domain}",
+                params={"key": self._get_api_key()},
+            )
+            resp.raise_for_status()
+            return {"provider": "Shodan", "status": "AVAILABLE", **resp.json()}
         except Exception as e:
             return {"provider": "Shodan", "status": "UNAVAILABLE", "reason": str(e)}
 
@@ -351,6 +354,14 @@ class ThreatIntelService:
         Enrich an indicator against all (or specified) providers concurrently.
         Provider failure isolation guarantees that one failed provider does not stop the trace.
         """
+        # Cache check for instant response
+        clean_indicator = indicator.strip().lower()
+        cache_key = f"intel:{indicator_type}:{clean_indicator}"
+        if providers is None:
+            cached_val = await cache_manager.get(cache_key)
+            if cached_val and isinstance(cached_val, dict):
+                return cached_val
+
         target_providers = [
             p for p in self._providers
             if (providers is None or p.provider_name in providers)
@@ -386,7 +397,7 @@ class ThreatIntelService:
 
         score_info = self._compute_normalized_score(results, indicator=indicator, indicator_type=indicator_type)
 
-        return {
+        final_result = {
             "indicator": indicator,
             "indicator_type": indicator_type,
             "providers": results,
@@ -399,6 +410,11 @@ class ThreatIntelService:
             "disagreement_details": score_info["disagreement_details"],
             "is_malicious": score_info["score"] >= 50,
         }
+
+        if providers is None:
+            await cache_manager.set(cache_key, final_result, ttl_seconds=14400)
+
+        return final_result
 
     def _compute_normalized_score(self, results: dict[str, Any], indicator: str = "", indicator_type: str = "ip") -> dict[str, Any]:
         """
@@ -462,6 +478,14 @@ class ThreatIntelService:
         if sh_status == "AVAILABLE":
             available_count += 1
             vulns = sh.get("vulnerabilities", [])
+            ports = sh.get("ports", [])
+            sh_pts = min(10.0, len(vulns) * 5.0 + (1.0 if ports else 0.0))
+            total_score += sh_pts
+            explanation.append({
+                "provider": "Shodan",
+                "points": round(sh_pts, 1),
+                "detail": f"{len(ports)} exposed ports, {len(vulns)} CVE vulnerabilities",
+            })
             shodan_signal = len(vulns) > 0
 
         # 4. IP Threat & Anonymizer Routing Heuristics

@@ -18,4 +18,6 @@ from app.models import *
 
 @pytest_asyncio.fixture(scope="function", autouse=True)
 async def lifespan_fixture():
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
     yield

@@ -26,9 +26,12 @@ import httpx
 
 from app.core.config import get_settings
 from app.core.logging import get_logger
+from app.core.http_client import get_http_client
+from app.core.cache import get_cache_manager
 
 settings = get_settings()
 logger = get_logger("sentineltrace.geo")
+cache_manager = get_cache_manager()
 
 # Known infrastructure signatures for accurate routing classification
 VPN_SIGNATURES = [
@@ -158,10 +161,10 @@ class IPWhoisAdapter(GeoProvider):
 
     async def geolocate(self, ip: str) -> dict[str, Any]:
         try:
-            async with httpx.AsyncClient(timeout=8.0) as client:
-                resp = await client.get(f"{self.BASE_URL}/{ip}")
-                resp.raise_for_status()
-                d = resp.json()
+            client = await get_http_client()
+            resp = await client.get(f"{self.BASE_URL}/{ip}")
+            resp.raise_for_status()
+            d = resp.json()
 
             if not d.get("success", False):
                 return {"error": d.get("message", "ipwho.is query unsuccessful"), "provider": self.provider_name}
@@ -218,10 +221,10 @@ class IPApiAdapter(GeoProvider):
             if settings.IPAPI_KEY:
                 params["key"] = settings.IPAPI_KEY
 
-            async with httpx.AsyncClient(timeout=8.0) as client:
-                resp = await client.get(f"{self.BASE_URL}/{ip}", params=params)
-                resp.raise_for_status()
-                d = resp.json()
+            client = await get_http_client()
+            resp = await client.get(f"{self.BASE_URL}/{ip}", params=params)
+            resp.raise_for_status()
+            d = resp.json()
 
             if d.get("status") == "fail":
                 return {"error": d.get("message", "ip-api query failed"), "provider": self.provider_name}
@@ -271,10 +274,10 @@ class IPInfoAdapter(GeoProvider):
 
     async def geolocate(self, ip: str) -> dict[str, Any]:
         try:
-            async with httpx.AsyncClient(timeout=8.0) as client:
-                resp = await client.get(f"{self.BASE_URL}/{ip}/json")
-                resp.raise_for_status()
-                d = resp.json()
+            client = await get_http_client()
+            resp = await client.get(f"{self.BASE_URL}/{ip}/json")
+            resp.raise_for_status()
+            d = resp.json()
 
             loc = d.get("loc", "")
             lat, lon = None, None
@@ -444,9 +447,15 @@ class GeoService:
         """Geolocate an IP address using MaxMind GeoIP2 as primary, with resilient fallback."""
         clean_ip = self._normalize_ip(ip)
 
+        # Check multi-tier cache (sub-millisecond return for previously seen IPs)
+        cache_key = f"geo:{clean_ip}"
+        cached_result = await cache_manager.get(cache_key)
+        if cached_result and isinstance(cached_result, dict):
+            return cached_result
+
         # 1. Intercept private/loopback/link-local/multicast/reserved addresses
         if self._is_private(clean_ip):
-            return {
+            res = {
                 "ip_address": clean_ip,
                 "note": "Private RFC 1918 / Loopback address — local routing",
                 "provider": "internal",
@@ -474,6 +483,8 @@ class GeoService:
                 "location_confidence": "HIGH_CONFIDENCE",
                 "provider_comparison": None,
             }
+            await cache_manager.set(cache_key, res, ttl_seconds=86400)
+            return res
 
         # 2. Try Authoritative Primary Source: MaxMind GeoIP2
         primary_result = await self._primary_provider.geolocate(clean_ip)
@@ -502,6 +513,7 @@ class GeoService:
                     logger.debug("geo_comparison_query_failed", ip=clean_ip, error=str(e))
 
             primary_result["provider_comparison"] = comparison_list if comparison_list else None
+            await cache_manager.set(cache_key, primary_result, ttl_seconds=86400)
             return primary_result
 
         logger.info("geo_maxmind_primary_unavailable", error=primary_result.get("error"), trying="fallback_providers")
@@ -512,6 +524,7 @@ class GeoService:
             if "error" not in result and result.get("country"):
                 result["location_status"] = "RESOLVED"
                 result["location_confidence"] = "HIGH_CONFIDENCE"
+                await cache_manager.set(cache_key, result, ttl_seconds=86400)
                 return result
             logger.info("geo_trying_next_provider", current=provider.provider_name, error=result.get("error"))
 

@@ -3,22 +3,34 @@
 import axios, { AxiosError, type InternalAxiosRequestConfig } from 'axios';
 
 const isBrowser = typeof window !== 'undefined';
-const isLocalhost = isBrowser && (
-  window.location.hostname === 'localhost' ||
-  window.location.hostname === '127.0.0.1' ||
-  window.location.hostname.includes('192.168.')
-);
+const hostname = isBrowser ? window.location.hostname : '';
+const isLoopback = hostname === 'localhost' || hostname === '127.0.0.1';
+const isLanIp = /^(\d{1,3}\.){3}\d{1,3}$/.test(hostname) && !isLoopback;
 
 const RENDER_BACKEND_URL = 'https://sentineltrace-e9td.onrender.com/api/v1';
 
 let rawBaseUrl =
   (import.meta as any).env?.VITE_API_BASE_URL ||
   (import.meta as any).env?.VITE_API_URL ||
-  'http://localhost:8000/api/v1';
+  '';
 
-// If running in browser on non-localhost domain (e.g. *.vercel.app) and the URL points to localhost, auto-route to Render
-if (isBrowser && !isLocalhost && (rawBaseUrl.includes('localhost') || rawBaseUrl.includes('127.0.0.1'))) {
-  rawBaseUrl = RENDER_BACKEND_URL;
+if (!rawBaseUrl) {
+  if (isLoopback) {
+    rawBaseUrl = 'http://localhost:8000/api/v1';
+  } else if (isLanIp) {
+    // When accessing from mobile on local Wi-Fi, target host machine backend at the same IP
+    rawBaseUrl = `http://${hostname}:8000/api/v1`;
+  } else {
+    // Deployed production or cloud environments (e.g., Vercel)
+    rawBaseUrl = RENDER_BACKEND_URL;
+  }
+} else if (isBrowser && !isLoopback && (rawBaseUrl.includes('localhost') || rawBaseUrl.includes('127.0.0.1'))) {
+  // If env var was defaulted to localhost but running on mobile or deployed domain
+  if (isLanIp) {
+    rawBaseUrl = `http://${hostname}:8000/api/v1`;
+  } else {
+    rawBaseUrl = RENDER_BACKEND_URL;
+  }
 }
 
 export const BASE_URL = rawBaseUrl.replace(/\/+$/, '');

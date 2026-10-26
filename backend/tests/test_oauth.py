@@ -55,7 +55,7 @@ async def test_oauth_start_generates_state_and_cookie(db_session):
     state_val = data["state"]
     db_state = await db_session.get(OAuthState, state_val)
     assert db_state is not None
-    assert db_state.browser_nonce == browser_nonce
+    assert db_state.browser_nonce == browser_nonce.strip('"')
 
 @pytest.mark.asyncio
 async def test_oauth_callback_browser_mismatch(db_session):
@@ -70,8 +70,8 @@ async def test_oauth_callback_browser_mismatch(db_session):
             params={"code": "dummycode", "state": state},
             follow_redirects=False
         )
-        assert cb_resp.status_code == 400
-        assert "cookie missing" in cb_resp.text.lower()
+        assert cb_resp.status_code == 302
+        assert "error=google_auth_failed" in cb_resp.headers["location"]
         
         # Add a wrong cookie
         ac.cookies.set("st_oauth_nonce", "wrongnonce")
@@ -80,8 +80,8 @@ async def test_oauth_callback_browser_mismatch(db_session):
             params={"code": "dummycode", "state": state},
             follow_redirects=False
         )
-        assert cb_resp2.status_code == 400
-        assert "mismatch" in cb_resp2.text.lower()
+        assert cb_resp2.status_code == 302
+        assert "error=google_auth_failed" in cb_resp2.headers["location"]
 
 @pytest.mark.asyncio
 async def test_oauth_callback_state_single_use(db_session):
@@ -110,17 +110,21 @@ async def test_oauth_callback_state_single_use(db_session):
         db_state = await db_session.get(OAuthState, state)
         assert db_state is None
 
+import uuid
+
 @pytest.mark.asyncio
 async def test_upsert_google_user_collision(db_session):
     # 1. Register a LOCAL user
+    unique_email = f"collision_{uuid.uuid4().hex[:8]}@test.com"
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
-        await ac.post("/api/v1/auth/register", json={
-            "email": "collision@test.com",
+        reg_resp = await ac.post("/api/v1/auth/register", json={
+            "email": unique_email,
             "password": "Password123!",
             "full_name": "Local User"
         })
+        assert reg_resp.status_code == 201
         
-        start_resp = await ac.get("/api/v1/auth/google")
+        start_resp = await ac.get("/api/v1/auth/google", params={"intent": "register"})
         state = start_resp.json()["state"]
         browser_nonce = start_resp.cookies["st_oauth_nonce"]
         
@@ -133,35 +137,37 @@ async def test_upsert_google_user_collision(db_session):
             with patch("google.oauth2.id_token.verify_oauth2_token") as mock_verify:
                 mock_verify.return_value = {
                     "iss": "accounts.google.com",
-                    "aud": "myclientid",
-                    "sub": "google123",
-                    "email": "collision@test.com",
+                    "aud": "mock_client_id",
+                    "sub": f"google_{uuid.uuid4().hex[:8]}",
+                    "email": unique_email,
                     "email_verified": True,
                     "name": "Collision User",
                 }
                 
                 # Make callback
+                ac.cookies.set("st_oauth_nonce", browser_nonce)
                 cb_resp = await ac.get(
                     "/api/v1/auth/google/callback",
                     params={"code": "realcode", "state": state},
-                    cookies={"st_oauth_nonce": browser_nonce},
                     follow_redirects=False
                 )
                 assert cb_resp.status_code == 302
                 assert "error=account_exists" in cb_resp.headers["location"]
                 
                 # Let's see if the user auth_provider changed
-                user = await db_session.scalar(select(User).where(User.email == "collision@test.com"))
+                user = await db_session.scalar(select(User).where(User.email == unique_email))
                 assert user.auth_provider == AuthProvider.LOCAL
                 
                 # Check that no external identity was linked
-                ext_id = await db_session.scalar(select(ExternalIdentity).where(ExternalIdentity.email == "collision@test.com"))
+                ext_id = await db_session.scalar(select(ExternalIdentity).where(ExternalIdentity.email == unique_email))
                 assert ext_id is None
 
 @pytest.mark.asyncio
 async def test_upsert_google_user_new(db_session):
+    unique_email = f"newgoogle_{uuid.uuid4().hex[:8]}@test.com"
+    sub_id = f"googlenew_{uuid.uuid4().hex[:8]}"
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
-        start_resp = await ac.get("/api/v1/auth/google")
+        start_resp = await ac.get("/api/v1/auth/google", params={"intent": "register"})
         state = start_resp.json()["state"]
         browser_nonce = start_resp.cookies["st_oauth_nonce"]
         
@@ -173,30 +179,43 @@ async def test_upsert_google_user_new(db_session):
             with patch("google.oauth2.id_token.verify_oauth2_token") as mock_verify:
                 mock_verify.return_value = {
                     "iss": "accounts.google.com",
-                    "aud": "myclientid",
-                    "sub": "googlenew123",
-                    "email": "newgoogle@test.com",
+                    "aud": "mock_client_id",
+                    "sub": sub_id,
+                    "email": unique_email,
                     "email_verified": True,
                     "name": "New Google User",
                 }
                 
+                ac.cookies.set("st_oauth_nonce", browser_nonce)
                 cb_resp = await ac.get(
                     "/api/v1/auth/google/callback",
                     params={"code": "realcode", "state": state},
-                    cookies={"st_oauth_nonce": browser_nonce},
                     follow_redirects=False
                 )
                 assert cb_resp.status_code == 302
-                assert "google_auth=success" in cb_resp.headers["location"]
+                assert "google_pending=" in cb_resp.headers["location"]
                 
-                # Should have refresh token cookie
-                assert "st_refresh_token" in cb_resp.cookies
+                # Extract pending token from redirect URL
+                parsed = urlparse(cb_resp.headers["location"])
+                qs = parse_qs(parsed.query)
+                pending_token = qs["google_pending"][0]
                 
-                user = await db_session.scalar(select(User).where(User.email == "newgoogle@test.com"))
+                # Complete registration
+                reg_resp = await ac.post(
+                    "/api/v1/auth/google/complete-registration",
+                    json={"pending_token": pending_token}
+                )
+                assert reg_resp.status_code == 200
+                data = reg_resp.json()
+                assert data["user"]["email"] == unique_email
+                assert "st_refresh_token" in reg_resp.cookies
+                
+                user = await db_session.scalar(select(User).where(User.email == unique_email))
                 assert user is not None
                 assert user.auth_provider == AuthProvider.GOOGLE
                 
                 ext_id = await db_session.scalar(select(ExternalIdentity).where(ExternalIdentity.user_id == user.id))
                 assert ext_id is not None
                 assert ext_id.provider == "google"
-                assert ext_id.provider_subject == "googlenew123"
+                assert ext_id.provider_subject == sub_id
+

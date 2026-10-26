@@ -9,6 +9,8 @@ from typing import AsyncGenerator
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
+from starlette.middleware.gzip import GZipMiddleware
+from starlette.responses import JSONResponse
 
 from app.api.v1.auth import router as auth_router
 from app.api.v1.campaigns import router as campaigns_router
@@ -55,6 +57,15 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
         logger.info("database_tables_ready")
+
+        # Storage cleanup: purge expired sessions
+        try:
+            from app.db.session import cleanup_expired_sessions
+            purged = await cleanup_expired_sessions()
+            if purged > 0:
+                logger.info("expired_sessions_purged", count=purged)
+        except Exception as purge_err:
+            logger.warning("cleanup_sessions_error", error=str(purge_err))
     except Exception as e:
         logger.warning("database_tables_init_error", error=str(e))
 
@@ -96,6 +107,11 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         await get_neo4j_service().close()
     except Exception:
         pass
+    try:
+        from app.core.http_client import close_http_client
+        await close_http_client()
+    except Exception:
+        pass
     logger.info("sentineltrace_stopped")
 
 
@@ -116,21 +132,45 @@ def create_app() -> FastAPI:
     )
 
     # ── Middleware ─────────────────────────────────────────────────────────────
+    # Network performance: gzip compress responses > 1KB
+    app.add_middleware(GZipMiddleware, minimum_size=1000)
     app.add_middleware(RequestLoggingMiddleware)
 
     @app.middleware("http")
     async def add_security_headers(request, call_next):
+        # 1. Reject oversized requests early to prevent memory exhaustion DoS (max 50MB)
+        content_length = request.headers.get("content-length")
+        if content_length:
+            try:
+                if int(content_length) > 52428800:
+                    return JSONResponse(
+                        status_code=413,
+                        content={"detail": "Payload too large. Maximum request size is 50MB."}
+                    )
+            except ValueError:
+                pass
+
         response = await call_next(request)
+
+        # 2. Hardened Enterprise Security Headers
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["X-Frame-Options"] = "DENY"
         response.headers["X-XSS-Protection"] = "1; mode=block"
         response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=(), payment=()"
+        response.headers["X-Permitted-Cross-Domain-Policies"] = "none"
+
+        # 3. HSTS when running on HTTPS / production
+        is_https = request.headers.get("x-forwarded-proto") == "https" or settings.is_production
+        if is_https:
+            response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains; preload"
+
         return response
 
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.ALLOWED_ORIGINS,
-        allow_origin_regex=r"^https://.*\.vercel\.app$",
+        allow_origin_regex=r"^(https?://(localhost|127\.0\.0\.1|192\.168\.\d+\.\d+|10\.\d+\.\d+\.\d+|172\.(1[6-9]|2\d|3[0-1])\.\d+\.\d+)(:\d+)?|https://.*\.vercel\.app)$",
         allow_credentials=True,
         allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
         allow_headers=["*"],

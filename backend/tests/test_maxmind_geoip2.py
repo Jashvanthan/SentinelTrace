@@ -85,7 +85,8 @@ async def test_maxmind_missing_database_graceful_fallback():
     """Test 2: When MaxMind DB is missing/unconfigured, falls back gracefully to secondary provider."""
     target_ip = "185.220.101.5"
 
-    with patch("os.path.exists", return_value=False), \
+    with patch("app.services.geo_service.cache_manager.get", new_callable=AsyncMock, return_value=None), \
+         patch("os.path.exists", return_value=False), \
          patch.object(IPWhoisAdapter, "geolocate", new_callable=AsyncMock) as mock_whois:
         
         mock_whois.return_value = {

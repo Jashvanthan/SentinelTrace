@@ -286,7 +286,7 @@ class ThreatAnalysisPipeline:
             try:
                 domain_clean = sender_domain.strip().lower()
                 if domain_clean and not domain_clean.endswith(".local") and not domain_clean.endswith(".lan"):
-                    dom_ip = socket.gethostbyname(domain_clean)
+                    dom_ip = await asyncio.to_thread(socket.gethostbyname, domain_clean)
                     if dom_ip and dom_ip not in target_ips:
                         target_ips.insert(0, dom_ip)
             except Exception:

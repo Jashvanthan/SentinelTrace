@@ -85,10 +85,10 @@ async def _insert_ioc(db, workspace_id: uuid.UUID, analysis_id: uuid.UUID,
 
     if days_ago > 0:
         # Move the created_at timestamp back
+        from sqlalchemy import update
         past_dt = datetime.now(UTC) - timedelta(days=days_ago)
         await db.execute(
-            text("UPDATE iocs SET created_at = :dt WHERE id = :id"),
-            {"dt": past_dt, "id": ioc.id},
+            update(IOC).where(IOC.id == ioc.id).values(created_at=past_dt)
         )
 
 

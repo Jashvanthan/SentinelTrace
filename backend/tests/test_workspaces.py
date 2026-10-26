@@ -2,9 +2,11 @@ import asyncio
 from httpx import AsyncClient, ASGITransport
 from app.main import app
 
+import pytest
 import uuid
 
-async def get_users():
+@pytest.fixture
+async def users():
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
         email_a = f"usera_{uuid.uuid4().hex[:6]}@test.com"
         await ac.post("/api/v1/auth/register", json={
@@ -38,7 +40,7 @@ async def test_workspace_creation(users):
         data = resp.json()
         assert data["name"] == "Workspace A"
         assert data["role"] == "owner"
-    print("  ✓ Workspace Creation test passed")
+    print("  [PASS] Workspace Creation test passed")
 
 async def test_idor_cross_workspace_access(users):
     token_a = users["user_a"]
@@ -57,7 +59,7 @@ async def test_idor_cross_workspace_access(users):
             headers={"Authorization": f"Bearer {token_b}"}
         )
         assert resp_b.status_code == 404
-    print("  ✓ IDOR Cross-Workspace Access Prevention passed")
+    print("  [PASS] IDOR Cross-Workspace Access Prevention passed")
 
 async def test_rbac_member_management(users):
     token_a = users["user_a"]
@@ -84,7 +86,7 @@ async def test_rbac_member_management(users):
             headers={"Authorization": f"Bearer {token_b}"}
         )
         assert add_fail_resp.status_code == 403
-    print("  ✓ RBAC Member Management passed")
+    print("  [PASS] RBAC Member Management passed")
 
 async def test_critical_idor_workspace_switching(users):
     token_a = users["user_a"]
@@ -147,7 +149,7 @@ async def test_critical_idor_workspace_switching(users):
             headers={"Authorization": f"Bearer {token_b}"}
         )
         assert get_ws_a_by_b_removed.status_code == 404
-    print("  ✓ Critical IDOR Workspace Switching test passed")
+    print("  [PASS] Critical IDOR Workspace Switching test passed")
 
 async def run_all():
     print("\n--- Testing Workspaces API ---")

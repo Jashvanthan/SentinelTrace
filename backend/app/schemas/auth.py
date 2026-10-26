@@ -11,12 +11,24 @@ from pydantic import BaseModel, EmailStr, Field, field_validator
 from app.models.user import AuthProvider, UserRole
 
 
+from app.services.password_service import validate_password_strength
+
+
 # ── Request Schemas ───────────────────────────────────────────────────────────
 
 class UserRegisterRequest(BaseModel):
     email: EmailStr
     full_name: str = Field(..., min_length=2, max_length=256)
-    password: str = Field(..., min_length=12, max_length=128)
+    password: str = Field(..., min_length=8, max_length=128)
+
+    @field_validator("password")
+    @classmethod
+    def check_password_strength(cls, v: str) -> str:
+        valid, msg = validate_password_strength(v)
+        if not valid:
+            raise ValueError(msg)
+        return v
+
 
 class LoginRequest(BaseModel):
     email: EmailStr
@@ -30,14 +42,33 @@ class RefreshTokenRequest(BaseModel):
 
 class ChangePasswordRequest(BaseModel):
     current_password: str
-    new_password: str = Field(..., min_length=12, max_length=128)
+    new_password: str = Field(..., min_length=8, max_length=128)
+
+    @field_validator("new_password")
+    @classmethod
+    def check_new_password_strength(cls, v: str) -> str:
+        valid, msg = validate_password_strength(v)
+        if not valid:
+            raise ValueError(msg)
+        return v
+
 
 class ForgotPasswordRequest(BaseModel):
     email: EmailStr
 
+
 class ResetPasswordRequest(BaseModel):
     token: str = Field(..., min_length=10)
-    new_password: str = Field(..., min_length=12, max_length=128)
+    new_password: str = Field(..., min_length=8, max_length=128)
+
+    @field_validator("new_password")
+    @classmethod
+    def check_reset_password_strength(cls, v: str) -> str:
+        valid, msg = validate_password_strength(v)
+        if not valid:
+            raise ValueError(msg)
+        return v
+
 
 # ── Response Schemas ──────────────────────────────────────────────────────────
 
@@ -102,3 +133,25 @@ class UserListResponse(BaseModel):
     total: int
     page: int
     page_size: int
+
+
+# ── Multi-Device Session Schemas ──────────────────────────────────────────────
+
+class DeviceSessionResponse(BaseModel):
+    id: str
+    family_id: str
+    device_type: str  # "mobile", "desktop", "tablet", "unknown"
+    device_name: str  # e.g. "iPhone (Mobile Safari)", "Windows PC (Chrome)"
+    browser: str
+    os: str
+    ip_address: str | None = None
+    created_at: datetime
+    last_used_at: datetime | None = None
+    expires_at: datetime
+    is_current: bool = False
+
+
+class DeviceSessionListResponse(BaseModel):
+    sessions: list[DeviceSessionResponse]
+    total_active: int
+

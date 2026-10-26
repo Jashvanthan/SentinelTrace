@@ -52,6 +52,7 @@ from app.models.refresh_session import RefreshSession
 from app.models.user import User
 from app.schemas.auth import (
     ChangePasswordRequest,
+    DeviceSessionListResponse,
     ForgotPasswordRequest,
     GoogleOAuthURLResponse,
     GoogleRegistrationRequest,
@@ -67,11 +68,14 @@ from app.services.auth_service import (
     change_user_password,
     create_google_pending_token,
     create_oauth_state,
+    list_user_sessions,
     login_google_user,
     logout_all_user,
     logout_user,
     register_google_user,
     register_user,
+    revoke_device_session,
+    revoke_other_sessions,
     rotate_refresh_token,
 )
 from pydantic import BaseModel, EmailStr
@@ -111,14 +115,14 @@ async def register(
         workspace_name="Personal Workspace",
         platform_url=settings.FRONTEND_URL,
     )
-    return user
+    return UserResponse.model_validate(user)
 
 
 @router.post("/welcome-email")
 async def trigger_welcome_email(
     payload: WelcomeEmailRequest,
     background_tasks: BackgroundTasks,
-):
+) -> dict[str, str]:
     """
     Manually or programmatically trigger an enterprise dark-mode HTML welcome email
     via SentinelTrace's verified Gmail SMTP service.
@@ -188,10 +192,55 @@ async def logout_all(
     await logout_all_user(db, current_user.id, response)
 
 
+@router.get("/sessions", response_model=DeviceSessionListResponse)
+async def get_active_sessions(
+    db: DbSession,
+    current_user: CurrentUser,
+    refresh_token_cookie: str | None = Cookie(None, alias=REFRESH_TOKEN_COOKIE_NAME),
+) -> DeviceSessionListResponse:
+    """
+    List all concurrent active device sessions for the authenticated user.
+    Shows device name, OS, browser, IP address, and identifies the current device.
+    """
+    return await list_user_sessions(db, current_user.id, refresh_token_cookie)
+
+
+@router.delete("/sessions/{family_id}", status_code=status.HTTP_200_OK)
+async def delete_active_session(
+    family_id: str,
+    db: DbSession,
+    response: Response,
+    current_user: CurrentUser,
+    refresh_token_cookie: str | None = Cookie(None, alias=REFRESH_TOKEN_COOKIE_NAME),
+) -> dict[str, Any]:
+    """Revoke a specific device session."""
+    import uuid as _uuid
+    try:
+        fid = _uuid.UUID(family_id)
+    except ValueError:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Invalid session ID format")
+
+    revoked = await revoke_device_session(db, current_user.id, fid, refresh_token_cookie, response)
+    if not revoked:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Session not found or already revoked")
+    return {"status": "REVOKED", "message": "Device session signed out successfully"}
+
+
+@router.post("/sessions/revoke-others", status_code=status.HTTP_200_OK)
+async def revoke_other_device_sessions(
+    db: DbSession,
+    current_user: CurrentUser,
+    refresh_token_cookie: str | None = Cookie(None, alias=REFRESH_TOKEN_COOKIE_NAME),
+) -> dict[str, Any]:
+    """Revoke all active device sessions EXCEPT the current device."""
+    count = await revoke_other_sessions(db, current_user.id, refresh_token_cookie)
+    return {"status": "SUCCESS", "revoked_count": count, "message": f"Signed out {count} other active device(s)"}
+
+
 @router.get("/me", response_model=UserResponse)
 async def get_me(current_user: CurrentUser) -> UserResponse:
     """Return the currently authenticated user's profile."""
-    return current_user
+    return UserResponse.model_validate(current_user)
 
 
 @router.patch("/me", response_model=UserResponse)
@@ -210,7 +259,7 @@ async def update_me(
     db.add(current_user)
     await db.commit()
     await db.refresh(current_user)
-    return current_user
+    return UserResponse.model_validate(current_user)
 
 
 @router.post("/change-password", response_model=TokenResponse)
@@ -307,28 +356,37 @@ def _get_google_redirect_uri(request: Request) -> str:
         proto = "https"
 
     if host and "localhost" not in host and "127.0.0.1" not in host:
-        return f"{proto}://{host}/api/v1/auth/google/callback"
+        # Google OAuth 2.0 strictly disallows raw IP addresses in redirect URIs
+        import ipaddress
+        host_name = host.split(":")[0]
+        try:
+            ipaddress.ip_address(host_name)
+            # If numeric IP (e.g. mobile LAN 192.168.x.x), fallback to configured redirect URI
+            return settings.GOOGLE_REDIRECT_URI or "http://localhost:8000/api/v1/auth/google/callback"
+        except ValueError:
+            # Valid domain name
+            return f"{proto}://{host}/api/v1/auth/google/callback"
 
     return settings.GOOGLE_REDIRECT_URI or "http://localhost:8000/api/v1/auth/google/callback"
 
 
 def _get_frontend_url(request: Request) -> str:
     """Resolve live frontend URL dynamically."""
-    if settings.FRONTEND_URL and "localhost" not in settings.FRONTEND_URL and "127.0.0.1" not in settings.FRONTEND_URL:
-        return settings.FRONTEND_URL.rstrip("/")
     origin = request.headers.get("origin")
-    if origin and "localhost" not in origin and "127.0.0.1" not in origin:
+    if origin and origin != "null":
         return origin.rstrip("/")
     referer = request.headers.get("referer")
     if referer:
         from urllib.parse import urlparse
         p = urlparse(referer)
-        if p.scheme and p.netloc and "localhost" not in p.netloc and "127.0.0.1" not in p.netloc:
+        if p.scheme and p.netloc:
             return f"{p.scheme}://{p.netloc}".rstrip("/")
     host = request.headers.get("x-forwarded-host") or request.url.netloc or ""
     if "onrender.com" in host or settings.APP_ENV == "production" or getattr(settings, "is_production", False):
         return "https://sentinel-trace-two.vercel.app"
-    return settings.FRONTEND_URL or "http://localhost:5173"
+    if settings.FRONTEND_URL:
+        return settings.FRONTEND_URL.rstrip("/")
+    return "http://localhost:5173"
 
 
 @router.get("/google", response_model=GoogleOAuthURLResponse)
@@ -424,8 +482,8 @@ async def google_oauth_callback(
     frontend_url = _get_frontend_url(request)
 
     is_prod = getattr(settings, "is_production", False)
-    response.delete_cookie("st_oauth_nonce", path="/", samesite="none" if is_prod else "lax")
-    response.delete_cookie("st_oauth_intent", path="/", samesite="none" if is_prod else "lax")
+    response.delete_cookie("st_oauth_nonce", path="/", samesite="none" if is_prod else "lax", secure=is_prod, httponly=True)
+    response.delete_cookie("st_oauth_intent", path="/", samesite="none" if is_prod else "lax", secure=is_prod, httponly=True)
 
     if error:
         err_detail = urllib.parse.quote(error_description or error)

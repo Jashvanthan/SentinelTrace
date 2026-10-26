@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import apiClient from '../lib/api';
+import { apiClient, BASE_URL } from '../lib/api';
 import { queryKeys } from './hooks';
 
 export type RealTimeConnectionState = 'CONNECTING' | 'CONNECTED' | 'RECONNECTING' | 'DISCONNECTED' | 'UNAUTHORIZED';
@@ -44,8 +44,7 @@ export function useRealtimeEvents(workspaceId: string | null) {
         if (!isMounted) return;
 
         // Construct SSE URL with ticket
-        const baseURL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1';
-        const url = `${baseURL}/workspaces/${workspaceId}/events/stream?ticket=${ticket}`;
+        const url = `${BASE_URL}/workspaces/${workspaceId}/events/stream?ticket=${ticket}`;
         
         const es = new EventSource(url, { withCredentials: true });
         eventSourceRef.current = es;

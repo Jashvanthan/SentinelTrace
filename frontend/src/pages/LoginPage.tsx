@@ -156,6 +156,13 @@ export function LoginPage() {
       return;
     }
 
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      const netMsg = 'Network issue. Please check your internet connection.';
+      setFormError(netMsg);
+      notify({ type: 'error', title: 'Network Issue', description: netMsg });
+      return;
+    }
+
     if (mode === 'login') {
       try {
         const data: any = await login.mutateAsync({ email, password });
@@ -163,7 +170,28 @@ export function LoginPage() {
         setAccessToken(data.access_token);
         navigate('/dashboard', { replace: true });
       } catch (err: any) {
-        const msg = extractErrorMessage(err, 'Invalid email or password.');
+        const isNetworkErr =
+          (typeof navigator !== 'undefined' && !navigator.onLine) ||
+          err?.code === 'ERR_NETWORK' ||
+          err?.message?.includes('Network Error') ||
+          err?.message?.includes('Failed to fetch') ||
+          err?.code === 'ECONNABORTED';
+
+        if (isNetworkErr) {
+          const netMsg = 'Network issue. Please check your internet connection.';
+          setFormError(netMsg);
+          notify({ type: 'error', title: 'Network Issue', description: netMsg });
+          return;
+        }
+
+        if (err?.response?.status === 401 || err?.response?.status === 400) {
+          const credMsg = 'Incorrect username or password';
+          setFormError(credMsg);
+          notify({ type: 'error', title: 'Login Failed', description: credMsg });
+          return;
+        }
+
+        const msg = extractErrorMessage(err, 'Incorrect username or password');
         setFormError(msg);
         notify({ type: 'error', title: 'Login Failed', description: msg });
       }
@@ -211,7 +239,19 @@ export function LoginPage() {
   };
 
   // Initiates Google OAuth with correct intent based on active tab
-  const handleGoogleOAuth = async () => {
+  const handleGoogleOAuth = async (e?: React.MouseEvent) => {
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      const netMsg = 'Network issue. Please check your internet connection.';
+      setFormError(netMsg);
+      notify({ type: 'error', title: 'Network Issue', description: netMsg });
+      return;
+    }
+
     try {
       setIsGoogleLoading(true);
       setFormError(null);
@@ -219,13 +259,27 @@ export function LoginPage() {
       const { data } = await apiClient.get<{ authorization_url: string; state: string }>(
         `/auth/google?intent=${intent}`
       );
-      window.location.href = data.authorization_url;
+      if (!data?.authorization_url) {
+        throw new Error('Google OAuth service is currently unreachable. Please try again.');
+      }
+      // window.location.assign ensures clean navigation on mobile iOS and Android webviews
+      window.location.assign(data.authorization_url);
     } catch (err: any) {
       setIsGoogleLoading(false);
-      const msg = extractErrorMessage(err, 'Failed to start Google OAuth flow');
+      const isNetworkErr =
+        (typeof navigator !== 'undefined' && !navigator.onLine) ||
+        err?.code === 'ERR_NETWORK' ||
+        err?.message?.includes('Network Error') ||
+        err?.message?.includes('Failed to fetch') ||
+        err?.code === 'ECONNABORTED';
+
+      const msg = isNetworkErr
+        ? 'Network issue. Please check your internet connection.'
+        : extractErrorMessage(err, 'Failed to start Google sign-in. Please try again or use email login.');
+      setFormError(msg);
       notify({
         type: 'error',
-        title: 'Google OAuth Error',
+        title: isNetworkErr ? 'Network Issue' : 'Google OAuth Error',
         description: msg,
       });
     }
@@ -543,27 +597,45 @@ export function LoginPage() {
             </div>
           </div>
 
-          {/* Google OAuth Button — intent changes based on active tab */}
+          {/* Google OAuth Button — touch-optimized for mobile & desktop */}
           <button
+            type="button"
             onClick={handleGoogleOAuth}
             disabled={isGoogleLoading}
             className={cn(
-              'w-full py-2.5 px-4 rounded-md font-medium text-sm',
+              'w-full min-h-[44px] py-3 px-4 rounded-md font-medium text-sm',
               'bg-[hsl(var(--surface-2))] text-[hsl(var(--foreground))] border border-[hsl(var(--border))]',
-              'hover:bg-[hsl(var(--surface-3))] transition-colors',
-              'flex items-center justify-center gap-2',
+              'hover:bg-[hsl(var(--surface-3))] active:scale-[0.99] transition-all touch-manipulation',
+              'flex items-center justify-center gap-3 shadow-sm',
               'disabled:opacity-60 disabled:cursor-not-allowed',
             )}
           >
             {isGoogleLoading ? (
               <>
-                <Loader2 className="w-4 h-4 animate-spin" />
-                Redirecting to Google…
+                <Loader2 className="w-4 h-4 animate-spin text-[hsl(var(--accent))]" />
+                <span>Redirecting to Google…</span>
               </>
             ) : (
               <>
-                <ExternalLink className="w-4 h-4" />
-                {mode === 'register' ? 'Register with Google' : 'Sign in with Google'}
+                <svg className="w-4 h-4 shrink-0" viewBox="0 0 24 24">
+                  <path
+                    fill="#4285F4"
+                    d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
+                  />
+                  <path
+                    fill="#34A853"
+                    d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
+                  />
+                  <path
+                    fill="#FBBC05"
+                    d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"
+                  />
+                  <path
+                    fill="#EA4335"
+                    d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"
+                  />
+                </svg>
+                <span>{mode === 'register' ? 'Register with Google' : 'Sign in with Google'}</span>
               </>
             )}
           </button>

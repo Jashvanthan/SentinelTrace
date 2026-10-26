@@ -31,6 +31,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPExcepti
 from fastapi.responses import StreamingResponse
 from sqlalchemy import func, select
 
+from app.core.config import get_settings
 from app.core.deps import AnalystOrAbove, CurrentUser, DbSession, require_workspace_role
 from app.core.logging import get_logger
 from app.models.email_analysis import AnalysisStatus, EmailAnalysis, SeverityLevel, ThreatCategory
@@ -46,6 +47,7 @@ from app.schemas.email_analysis import (
 from app.services.threat_service import ThreatAnalysisPipeline
 from app.services.audit_service import write_audit_log
 
+settings = get_settings()
 router = APIRouter(prefix="/emails", tags=["Email Analysis"])
 logger = get_logger("sentineltrace.api.emails")
 
