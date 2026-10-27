@@ -336,22 +336,6 @@ export function AppShell() {
             </div>
           </div>
 
-          {/* Global Search Bar (hidden on small mobile screens, visible from sm up) */}
-          <div className="hidden sm:flex items-center gap-4 flex-1 max-w-md">
-            <div className="relative w-full">
-              <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-[#64748b]" />
-              <input
-                type="text"
-                placeholder="Search IPs, Hashes, Cases..."
-                className="w-full bg-[#121824] border border-[#232e42] rounded px-3 py-1.5 pl-9 text-xs text-white placeholder-[#64748b] outline-none focus:border-[#3b82f6] font-mono transition-colors"
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && e.currentTarget.value.trim()) {
-                    navigate(`/intel?q=${encodeURIComponent(e.currentTarget.value.trim())}`);
-                  }
-                }}
-              />
-            </div>
-          </div>
 
           {/* Right Header Status & User Controls */}
           <div className="flex items-center gap-2 sm:gap-3 md:gap-4 ml-auto">
